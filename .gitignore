@@ -3,7 +3,7 @@
 venv/
 .venv/
 .vscode/
-
+.documents/
 
 /__pycache__/
 *.pyc
