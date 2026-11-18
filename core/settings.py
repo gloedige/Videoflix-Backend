@@ -10,8 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
-from pathlib import Path
 import os
+import socket
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -42,9 +44,11 @@ INSTALLED_APPS = [
     'django_rq',
     'rest_framework',
     'content_app.apps.ContentAppConfig',
+    'debug_toolbar',
 ]
 
 MIDDLEWARE = [
+    'debug_toolbar.middleware.DebugToolbarMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -136,6 +140,16 @@ AUTH_PASSWORD_VALIDATORS = [
 LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'UTC'
+
+INTERNAL_IPS = [
+    "127.0.0.1",
+    "localhost",
+]
+
+# Docker forwards local requests through its network gateway, not 127.0.0.1.
+if DEBUG and Path('/.dockerenv').exists():
+    docker_ip = socket.gethostbyname(socket.gethostname())
+    INTERNAL_IPS.append(docker_ip.rsplit('.', 1)[0] + '.1')
 
 USE_I18N = True
 
