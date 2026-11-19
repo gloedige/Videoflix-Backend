@@ -1,0 +1,221 @@
+# Third-party
+from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
+from gunicorn.config import User
+from rest_framework import status
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+# Local imports
+from auth_app.api.authentication import CookieJWTAuthentication
+from auth_app.models import CustomUser
+from core.settings import CUSTOM_ACCESS_COOKIE_LIFETIME, CUSTOM_REFRESH_COOKIE_LIFETIME
+from .serializers import LoginSerializer, RegistrationSerializer
+from auth_app.email import generate_otp, send_otp_email
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+PUBLIC_PERMISSIONS = (AllowAny,)
+AUTHENTICATED_PERMISSIONS = (IsAuthenticated,)
+
+def set_auth_cookies(response, access_token, new_refresh_token):
+    if access_token:
+        response.set_cookie(
+            key='access_token',
+            value=access_token,
+            max_age=CUSTOM_ACCESS_COOKIE_LIFETIME,
+            httponly=True,
+            secure=True,
+            samesite='Lax',
+            path='/',
+        )
+
+    if new_refresh_token:
+        response.set_cookie(
+            key='refresh_token',
+            value=new_refresh_token,
+            max_age=CUSTOM_REFRESH_COOKIE_LIFETIME,
+            httponly=True,
+            secure=True,
+            samesite='Lax',
+            path='/',
+        )
+    return response
+
+def delete_session_cookies(response):
+    response.delete_cookie('access_token', path='/')
+    response.delete_cookie('refresh_token', path='/')
+    return response
+
+class VerifyOTPView(APIView):
+    """API view for verifying OTP during registration."""
+    permission_classes = PUBLIC_PERMISSIONS
+    authentication_classes = (CookieJWTAuthentication,)
+
+    def post(self, request):
+        email = request.data.get('email')
+        otp_entered = request.data.get('otp')
+        try:
+            user = CustomUser.objects.get(email=email, otp=otp_entered)
+            user.is_verified = True
+            user.save()
+            return Response({'message': 'Account successfully activated.'}, status=status.HTTP_200_OK)
+        except CustomUser.DoesNotExist:
+            return Response({'message': 'Activation failed.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RegistrationView(APIView):
+    """ API view for user registration. """
+    permission_classes = PUBLIC_PERMISSIONS
+    authentication_classes = (CookieJWTAuthentication,)
+
+    def post(self, request):
+        """Handle user registration."""
+        serializer = RegistrationSerializer(data=request.data)
+
+        if serializer.is_valid():
+            try:
+                with transaction.atomic():
+                    user = serializer.save()
+                    otp = generate_otp()
+                    logger.info(f"Generated OTP for {user.email}: {otp}")
+                    user.otp = otp
+                    user.save()
+                    send_otp_email(user.email, otp)
+            except IntegrityError:
+                logger.exception("Fehler bei der Registrierung")
+                return Response(
+                    {"detail": "A user with this username or email already exists."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return Response(
+                        {
+                            'user': {
+                                'id': user.pk,
+                                'email': user.email,
+                            },
+                            'token': otp
+                        },
+                        status=status.HTTP_201_CREATED,
+                    )
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class CookieTokenObtainPairView(TokenObtainPairView):
+    """API view for obtaining JWT tokens and setting them as HttpOnly cookies."""
+    permission_classes = PUBLIC_PERMISSIONS
+    serializer_class = LoginSerializer
+    authentication_classes = (CookieJWTAuthentication,)
+
+    def get_valid_login_serializer(self, data):
+        serializer = self.get_serializer(data=data)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except AuthenticationFailed:
+            raise AuthenticationFailed("Invalid login data.")
+        return serializer
+
+    def post(self, request, *args, **kwargs):
+        """Handle user login and set JWT tokens as HttpOnly cookies."""
+        serializer = self.get_valid_login_serializer(request.data)
+
+        user = serializer.user
+        response = Response(
+            {
+                'detail': 'Login successfully!',
+                'user': {
+                    'id': user.pk,
+                    'username': user.username,
+                    'email': user.email,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+        data = serializer.validated_data
+        return set_auth_cookies(response, data['access'], data['refresh'])
+
+class CookieRefreshView(TokenRefreshView):
+    """API view for refreshing JWT tokens using HttpOnly cookies."""
+    permission_classes = PUBLIC_PERMISSIONS
+    authentication_classes = (CookieJWTAuthentication,)
+    serializer_class = TokenRefreshSerializer
+    
+    def post(self, request, *args, **kwargs):
+        """Handle refreshing of JWT tokens using the refresh token from HttpOnly cookies."""
+        refresh_token = request.COOKIES.get('refresh_token')
+
+        if refresh_token is None:
+            return self.respond_with_token_error()
+        
+        serializer = self.get_valid_refresh_serializer(refresh_token)
+        if serializer is None:
+            return self.respond_with_token_error()
+
+        response = Response({"detail": "Token refreshed"}, status=status.HTTP_200_OK)
+        response = delete_session_cookies(response)
+        data = serializer.validated_data
+        return set_auth_cookies(response, data.get('access'), data.get('refresh'))
+
+    def get_valid_refresh_serializer(self, token):
+        """Validate refresh token and return its serializer, or None."""
+        serializer = self.get_serializer(data={'refresh': token})
+        try:
+            self.check_user_active(token)
+            serializer.is_valid(raise_exception=True)
+        except (TokenError, AuthenticationFailed):
+            return None
+        return serializer
+
+    def respond_with_token_error(self):
+        """Respond with a token error indicating the refresh token is invalid or not provided."""
+        return Response(
+                {"detail": "Refresh token invalid or not provided"}, 
+                status=status.HTTP_401_UNAUTHORIZED
+                )
+
+    def check_user_active(self, refresh_token):
+        """Check if the user associated with the refresh token is active."""
+        token = RefreshToken(refresh_token)
+        user_id = token.payload.get('user_id')
+        if not get_user_model().objects.filter(pk=user_id, is_active=True).exists():
+            raise TokenError('User is inactive')
+
+class CookieLogoutView(APIView):
+    """API view for logging out users by blacklisting the refresh token and deleting cookies."""
+    permission_classes = AUTHENTICATED_PERMISSIONS
+    authentication_classes = (CookieJWTAuthentication,)
+
+    def authenticate_access_cookie(self, request):
+        """Validate the access cookie and return its verified JWT payload."""
+        result = CookieJWTAuthentication().authenticate_access_cookie(request)
+        if result is None:
+            raise AuthenticationFailed('Access token is required.')
+        return result[1]
+
+    def post(self, request):
+        """Handle user logout by blacklisting the refresh token and deleting HttpOnly cookies."""
+        access_token = self.authenticate_access_cookie(request)
+        self.blacklist_refresh_cookie(request.COOKIES.get('refresh_token'))
+        CookieJWTAuthentication().store_access_token_in_custom_storage(access_token)
+        CookieJWTAuthentication().clear_deprecated_access_token()
+        response = Response(
+            {"detail": "Log-Out successfully! All Tokens will be deleted. Refresh token is now invalid."}, 
+            status=status.HTTP_200_OK)
+        delete_session_cookies(response)
+        return response
+
+
+    def blacklist_refresh_cookie(self, refresh_token):
+        """Blacklist a valid refresh cookie; tolerate its absence or invalidity."""
+        try:
+            RefreshToken(refresh_token).blacklist()
+        except TokenError:
+            return None
