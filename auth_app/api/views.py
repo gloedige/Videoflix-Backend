@@ -18,7 +18,7 @@ from auth_app.models import CustomUser
 from auth_app.utils import generate_otp
 from core.settings import CUSTOM_ACCESS_COOKIE_LIFETIME, CUSTOM_REFRESH_COOKIE_LIFETIME
 from .serializers import LoginSerializer, RegistrationSerializer
-from auth_app.email import send_otp_email
+from auth_app.email import send_activation_email
 
 import logging
 
@@ -88,7 +88,7 @@ class RegistrationView(APIView):
                     user = serializer.save()
                     user.otp = generate_otp()
                     user.save()
-                    send_otp_email(user.email, user.pk, user.otp)
+                    send_activation_email(user.email, user.pk, user.otp)
             except IntegrityError:
                 logger.exception("Fehler bei der Registrierung")
                 return Response(
