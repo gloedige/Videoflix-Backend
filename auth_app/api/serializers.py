@@ -14,6 +14,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
 
 class RegistrationSerializer(serializers.ModelSerializer):
     """Serializer for user registration, including password confirmation."""
+    email = serializers.EmailField(required=True)
     confirmed_password = serializers.CharField(write_only=True)
 
     class Meta:
@@ -25,13 +26,6 @@ class RegistrationSerializer(serializers.ModelSerializer):
             'is_verified': {'write_only': True},
             'otp': {'write_only': True}
         }
-
-    # def validate_username(self, value):
-    #     """Trim the username and reject exact duplicates."""
-    #     value = value.strip()
-    #     if User.objects.filter(username=value).exists():
-    #         raise serializers.ValidationError('This username is already in use.')
-    #     return value
     
     def validate_email(self, value):
         """Trim and normalize the email, and reject duplicates."""

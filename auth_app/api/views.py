@@ -1,7 +1,6 @@
 # Third-party
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from gunicorn.config import User
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny, IsAuthenticated
