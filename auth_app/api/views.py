@@ -15,9 +15,10 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 # Local imports
 from auth_app.api.authentication import CookieJWTAuthentication
 from auth_app.models import CustomUser
+from auth_app.utils import generate_otp
 from core.settings import CUSTOM_ACCESS_COOKIE_LIFETIME, CUSTOM_REFRESH_COOKIE_LIFETIME
 from .serializers import LoginSerializer, RegistrationSerializer
-from auth_app.email import generate_otp, send_otp_email
+from auth_app.email import send_otp_email
 
 import logging
 
@@ -85,11 +86,9 @@ class RegistrationView(APIView):
             try:
                 with transaction.atomic():
                     user = serializer.save()
-                    otp = generate_otp()
-                    logger.info(f"Generated OTP for {user.email}: {otp}")
-                    user.otp = otp
+                    user.otp = generate_otp()
                     user.save()
-                    send_otp_email(user.email, otp)
+                    send_otp_email(user.email, user.pk, user.otp)
             except IntegrityError:
                 logger.exception("Fehler bei der Registrierung")
                 return Response(
@@ -102,7 +101,7 @@ class RegistrationView(APIView):
                                 'id': user.pk,
                                 'email': user.email,
                             },
-                            'token': otp
+                            'token': user.otp
                         },
                         status=status.HTTP_201_CREATED,
                     )
