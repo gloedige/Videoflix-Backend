@@ -7,6 +7,8 @@ from rest_framework.test import APIClient
 
 # Local imports
 from auth_app.models import CustomUser as User
+from auth_app.utils import encode_user_id, generate_otp
+
 
 class AuthenticationEndpointTest(TestCase):
     '''Test suite for authentication endpoints.'''
@@ -15,13 +17,15 @@ class AuthenticationEndpointTest(TestCase):
         """Create an API client."""
         self.client = APIClient()
 
-    def create_user(self, email, is_active=True):
+    def create_user(self, email, is_active=True, is_verified=False, otp=None):
         """Create and return a user with password 'pass'."""
         return User.objects.create_user(
             username=email,
             email=email,
             password='pass',
-            is_active=is_active
+            is_active=is_active,
+            is_verified=is_verified,
+            otp=otp
         )
 
     def register(self, **overrides):
@@ -33,6 +37,22 @@ class AuthenticationEndpointTest(TestCase):
         }
         payload.update(overrides)
         return self.client.post('/api/register/', payload, format='json')
+
+    def login(self, username, password):
+        """POST login credentials and return the response."""
+        payload = {
+            'username': username,
+            'password': password
+        }
+        return self.client.post('/api/login/', payload, format='json')
+    
+    def assert_generic_login_error(self, response):
+        """Assert the response is the generic invalid-credentials 401 error."""
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.data,
+            {'detail': "Invalid login data."},
+        )
 
     def assert_password_rejected(self, email, password, confirmed_password, expected_field):
         """Assert registration with these passwords fails with an error on expected_field."""
@@ -129,3 +149,39 @@ class AuthenticationEndpointTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('email', response.data)
         self.assertEqual(User.objects.count(), 1)
+
+    def test_registration_verifies_otp(self):
+        """Verify that a user can activate their account with a valid OTP."""
+        user = self.create_user('user@example.com', is_verified=False, otp='123456')
+        uidb64 = encode_user_id(user.pk)
+        token = '123456'
+        response = self.client.get(f'/api/activate/{uidb64}/{token}/')
+
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertTrue(user.is_verified)
+        self.assertIsNone(user.otp)
+
+    def test_registration_rejects_invalid_otp(self):
+        """Reject an invalid OTP during account activation."""
+        user = self.create_user('user@example.com', is_verified=False, otp='123456')
+        uidb64 = encode_user_id(user.pk)
+        token = '654321'
+        response = self.client.get(f'/api/activate/{uidb64}/{token}/')
+
+        self.assertEqual(response.status_code, 400)
+        user.refresh_from_db()
+        self.assertFalse(user.is_verified)
+        self.assertEqual(user.otp, '123456')
+
+    def test_registration_verifies_otp_with_invalid_uid(self):
+        """Reject OTP verification when the UID is invalid."""
+        user = self.create_user('user@example.com', is_verified=False, otp='123456')
+        uidb64 = 'invalid-uid'
+        token = '123456'
+        response = self.client.get(f'/api/activate/{uidb64}/{token}/')
+
+        self.assertEqual(response.status_code, 400)
+        user.refresh_from_db()
+        self.assertFalse(user.is_verified)
+        self.assertEqual(user.otp, '123456')
