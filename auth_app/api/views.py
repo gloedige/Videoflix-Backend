@@ -243,37 +243,38 @@ class CookieLogoutView(APIView):
         except TokenError:
             return None
 
-    class PasswordResetView(APIView):
-        """API view for handling password reset requests."""
-        permission_classes = PUBLIC_PERMISSIONS
-        authentication_classes = ()
-        serializer_class = PasswordResetSerializer
+class PasswordResetView(APIView):
+    """API view for handling password reset requests."""
+    permission_classes = PUBLIC_PERMISSIONS
+    authentication_classes = ()
+    serializer_class = PasswordResetSerializer
 
-        def post(self, request):
-            """Handle password reset request."""
+    def post(self, request, **kwargs):
+        """Handle password reset request."""
 
-            serializer = self.serializer_class(data=request.data)
-            if not serializer.is_valid():
-                return Response(
-                    serializer.errors,
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            email = request.data.get('email')
-            try:
-                with transaction.atomic():
-                    user = CustomUser.objects.get(email=email)
-                    user.otp = generate_otp()  # Assuming you have a function to generate OTP
-                    user.save()
-                    send_password_reset_email(email, user.id, user.otp)
-            except IntegrityError:
-                    logger.exception("Fehler bei der Registrierung")
-                    return Response(
-                        {"detail": "A user with this username or email already exists."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                )
+        serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
             return Response(
-                {"detail": "An email has been sent to reset your password."},
-                status=status.HTTP_200_OK
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
             )
+
+        email = serializer.validated_data.get('email')
+        logger.info(f"Password reset requested for email: {email}")
+        try:
+            with transaction.atomic():
+                user = CustomUser.objects.get(email=email)
+                user.otp = generate_otp()  # Assuming you have a function to generate OTP
+                user.save()
+                send_password_reset_email(email, user.id, user.otp)
+        except IntegrityError:
+                logger.exception("Fehler bei der Registrierung")
+                return Response(
+                    {"detail": "A user with this username or email already exists."},
+                    status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            {"detail": "An email has been sent to reset your password."},
+            status=status.HTTP_200_OK
+        )
             
