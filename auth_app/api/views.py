@@ -15,12 +15,17 @@ from rest_framework_simplejwt.views import (
 )
 
 from auth_app.api.authentication import CookieJWTAuthentication
-from auth_app.email import send_activation_email
+from auth_app.email import send_activation_email, send_password_reset_email
 from auth_app.models import CustomUser
 from auth_app.utils import generate_otp
 from core.settings import CUSTOM_ACCESS_COOKIE_LIFETIME, CUSTOM_REFRESH_COOKIE_LIFETIME
 
-from .serializers import LoginSerializer, RegistrationSerializer, VerifyOTPSerializer
+from .serializers import (
+    LoginSerializer,
+    PasswordResetSerializer,
+    RegistrationSerializer,
+    VerifyOTPSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -237,3 +242,38 @@ class CookieLogoutView(APIView):
             RefreshToken(refresh_token).blacklist()
         except TokenError:
             return None
+
+    class PasswordResetView(APIView):
+        """API view for handling password reset requests."""
+        permission_classes = PUBLIC_PERMISSIONS
+        authentication_classes = ()
+        serializer_class = PasswordResetSerializer
+
+        def post(self, request):
+            """Handle password reset request."""
+
+            serializer = self.serializer_class(data=request.data)
+            if not serializer.is_valid():
+                return Response(
+                    serializer.errors,
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            email = request.data.get('email')
+            try:
+                with transaction.atomic():
+                    user = CustomUser.objects.get(email=email)
+                    user.otp = generate_otp()  # Assuming you have a function to generate OTP
+                    user.save()
+                    send_password_reset_email(email, user.id, user.otp)
+            except IntegrityError:
+                    logger.exception("Fehler bei der Registrierung")
+                    return Response(
+                        {"detail": "A user with this username or email already exists."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                )
+            return Response(
+                {"detail": "An email has been sent to reset your password."},
+                status=status.HTTP_200_OK
+            )
+            
