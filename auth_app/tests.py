@@ -327,3 +327,33 @@ class AuthenticationEndpointTest(TestCase):
         self.assertIn('refresh_token', response.cookies)
         self.assertTrue(response.cookies['access_token']['httponly'])
         self.assertTrue(response.cookies['refresh_token']['httponly'])
+
+    def test_logout_without_login(self):
+        """Logging out without being logged in should fail."""
+        response = self.client.post('/api/logout/', format='json')
+        self.assertEqual(response.status_code, 401)
+
+    def test_logout_with_login(self):
+        """Logging out after being logged in should succeed."""
+        self.create_user('logout@example.com', is_verified=False, otp='123456')
+        login_response = self.login('logout@example.com', 'pass')
+        refresh_token = login_response.cookies['refresh_token'].value
+        access_token = login_response.cookies['access_token'].value
+
+        response = self.client.post('/api/logout/', format='json')
+        
+        self.assertEqual(response.status_code, 200)
+        self.validate_cleared_token_cookies()
+        self.validate_refresh_token_on_blacklist(refresh_token)
+        self.client.cookies['access_token'] = access_token
+        replay_response = self.client.get('/api/video/')
+        self.assertEqual(replay_response.status_code, 401)
+
+    def test_logout_validates_access_cookie_even_with_authorization_header(self):
+        """A valid bearer token must not mask a malformed access cookie at logout."""
+        self.create_user('logout-header@example.com', is_verified=False, otp='123456')
+        login_response = self.login('logout-header@example.com', 'pass')
+        access_token = login_response.cookies['access_token'].value
+        self.client.cookies['access_token'] = 'malformed.jwt.cookie'
+        response = self.client.post('/api/logout/', HTTP_AUTHORIZATION=f'Bearer {access_token}')
+        self.assertEqual(response.status_code, 401)
