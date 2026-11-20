@@ -1,5 +1,5 @@
-# Third-party
-from django.contrib.auth import get_user_model
+import logging
+
 from django.db import IntegrityError, transaction
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
@@ -9,18 +9,18 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 
-# Local imports
 from auth_app.api.authentication import CookieJWTAuthentication
+from auth_app.email import send_activation_email
 from auth_app.models import CustomUser
 from auth_app.utils import generate_otp
 from core.settings import CUSTOM_ACCESS_COOKIE_LIFETIME, CUSTOM_REFRESH_COOKIE_LIFETIME
-from .serializers import LoginSerializer, RegistrationSerializer, VerifyOTPSerializer
-from auth_app.email import send_activation_email
-from auth_app.utils import decode_uidb64
 
-import logging
+from .serializers import LoginSerializer, RegistrationSerializer, VerifyOTPSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +164,7 @@ class CookieRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         """Handle refreshing of JWT tokens using the refresh token from HttpOnly cookies."""
         refresh_token = request.COOKIES.get('refresh_token')
+        access_token = request.COOKIES.get('access_token')
 
         if refresh_token is None:
             return self.respond_with_token_error()
@@ -172,7 +173,11 @@ class CookieRefreshView(TokenRefreshView):
         if serializer is None:
             return self.respond_with_token_error()
 
-        response = Response({"detail": "Token refreshed"}, status=status.HTTP_200_OK)
+        response = Response(
+            {"detail": "Token refreshed",
+             'access': access_token,
+            }, 
+            status=status.HTTP_200_OK)
         response = delete_session_cookies(response)
         data = serializer.validated_data
         return set_auth_cookies(response, data.get('access'), data.get('refresh'))
@@ -198,7 +203,7 @@ class CookieRefreshView(TokenRefreshView):
         """Check if the user associated with the refresh token is active."""
         token = RefreshToken(refresh_token)
         user_id = token.payload.get('user_id')
-        if not get_user_model().objects.filter(pk=user_id, is_active=True).exists():
+        if not CustomUser.objects.filter(pk=user_id, is_active=True).exists():
             raise TokenError('User is inactive')
 
 class CookieLogoutView(APIView):

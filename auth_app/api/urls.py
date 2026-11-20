@@ -1,8 +1,12 @@
-# Third-party
 from django.urls import path
 
-# Local imports
-from .views import RegistrationView, CookieRefreshView, CookieTokenObtainPairView, CookieLogoutView, VerifyOTPView
+from .views import (
+    CookieLogoutView,
+    CookieRefreshView,
+    CookieTokenObtainPairView,
+    RegistrationView,
+    VerifyOTPView,
+)
 
 urlpatterns = [
     path('register/', RegistrationView.as_view(), name='registration'),
