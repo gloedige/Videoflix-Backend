@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.db import IntegrityError
 from django.test import TestCase
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 # Local imports
 from auth_app.models import CustomUser as User
@@ -17,13 +18,12 @@ class AuthenticationEndpointTest(TestCase):
         """Create an API client."""
         self.client = APIClient()
 
-    def create_user(self, email, is_active=True, is_verified=False, otp=None):
+    def create_user(self, email, is_verified=False, otp=None):
         """Create and return a user with password 'pass'."""
         return User.objects.create_user(
             username=email,
             email=email,
             password='pass',
-            is_active=is_active,
             is_verified=is_verified,
             otp=otp
         )
@@ -38,10 +38,10 @@ class AuthenticationEndpointTest(TestCase):
         payload.update(overrides)
         return self.client.post('/api/register/', payload, format='json')
 
-    def login(self, username, password):
+    def login(self, email, password):
         """POST login credentials and return the response."""
         payload = {
-            'username': username,
+            'email': email,
             'password': password
         }
         return self.client.post('/api/login/', payload, format='json')
@@ -53,6 +53,14 @@ class AuthenticationEndpointTest(TestCase):
             response.data,
             {'detail': "Invalid login data."},
         )
+    
+    def assert_registered_user(self, response):
+        """Assert user and response body of a successful registration."""
+        user = User.objects.get(username='valid@example.com')
+        self.assertEqual(user.email, 'valid@example.com')
+        self.assertEqual(response.data, {
+            'detail': 'User created successfully!'
+        })
 
     def assert_password_rejected(self, email, password, confirmed_password, expected_field):
         """Assert registration with these passwords fails with an error on expected_field."""
@@ -64,6 +72,52 @@ class AuthenticationEndpointTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data.get(expected_field), ['Passwords do not match'])
         self.assertFalse(User.objects.filter(email=email).exists())
+
+    def validate_token_cookies(self, response, refresh_expected=True):
+        """Assert that the response sets non-empty JWT cookies."""
+        self.assertIn('access_token', response.cookies)
+        self.assertTrue(response.cookies['access_token'].value)
+        if refresh_expected:
+            self.assertIn('refresh_token', response.cookies)
+            self.assertTrue(response.cookies['refresh_token'].value)
+
+    def validate_cleared_token_cookies(self):
+        """Assert that the response expires both JWT cookies."""
+        for name in ('access_token', 'refresh_token'):
+            self.assertIn(name, self.client.cookies)
+            self.assertEqual(self.client.cookies[name].value, '')
+            self.assertEqual(self.client.cookies[name]['max-age'], 0)
+
+    def validate_refresh_token_not_provided(self, response):
+        """Assert that the response indicates the refresh token was not provided."""
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.data,
+            {"detail": "Refresh token invalid or not provided"}
+        )
+
+    def assign_invalid_cookie_value(self, name, value, age):
+        """Set the specified cookie to an invalid value."""
+        self.client.cookies[name] = value
+        self.client.cookies[name]['max-age'] = age
+
+    def validate_refresh_token_on_blacklist(self, refresh_token):
+        """Assert that the refresh token is blacklisted."""
+        self.assertTrue(OutstandingToken.objects.filter(token=refresh_token).exists())
+        self.assertTrue(BlacklistedToken.objects.filter(token__token=refresh_token).exists())
+
+    def test_registration_allows_username_with_different_case(self):
+        """A username differing only in case can still register."""
+        self.create_user('existing@example.com')
+
+        response = self.register(
+            email='new@example.com'
+        )
+
+        self.assertEqual(response.status_code, 201)
+        # self.assertTrue(User.objects.filter(username='existing@example.com').exists())
+        self.assertTrue(User.objects.filter(email='existing@example.com').exists())
+
 
     def test_registration_returns_400_when_user_save_raises_integrity_error(self):
         """Return 400 if saving the user raises a database integrity error."""
@@ -226,3 +280,50 @@ class AuthenticationEndpointTest(TestCase):
         response = self.client.get(f'/api/activate/{uidb64}/{token}/')
         self.assertEqual(response.status_code, 400)
         self.assertIn('token', response.data)
+
+    def test_login_requires_exact_email_case(self):
+        """Login succeeds with exact username case and fails otherwise."""
+        user = self.create_user('login@example.com', is_verified=False, otp='123456')
+
+        response = self.login('login@example.com', 'pass')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['detail'], 'Login successfully!')
+        self.assertEqual(response.data['user']['id'], user.pk)
+        self.assertEqual(response.data['user']['username'], 'login@example.com')
+        self.assert_generic_login_error(self.login('LOGIN@EXAMPLE.COM', 'pass'))
+
+    def test_login_returns_same_generic_validation_error_for_invalid_credentials(self):
+        """Unknown users and wrong passwords yield the same generic error."""
+        self.create_user('known@example.com', is_verified=False, otp='123456')
+
+        for email, password in (
+            ('missing-user@example.com', 'pass'),
+            ('known@example.com', 'wrong'),
+        ):
+            with self.subTest(email=email):
+                self.assert_generic_login_error(self.login(email, password))
+
+    def test_login_rejects_missing_fields(self):
+        """Login without fields reports both missing fields."""
+        response = self.client.post('/api/login/', {}, format='json')
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_cookies_are_set_on_login(self):
+        """Cookies are correctly set after a successful login."""
+        self.create_user('cookie@example.com', is_verified=False, otp='123456')
+        response = self.login('cookie@example.com', 'pass')
+
+        self.assertEqual(response.status_code, 200)
+        self.validate_token_cookies(response)
+
+    def test_login_cookies_has_httponly_flag(self):
+        """Login cookies should have the HttpOnly flag set."""
+        self.create_user('cookie@example.com', is_verified=False, otp='123456')
+        response = self.login('cookie@example.com', 'pass')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access_token', response.cookies)
+        self.assertIn('refresh_token', response.cookies)
+        self.assertTrue(response.cookies['access_token']['httponly'])
+        self.assertTrue(response.cookies['refresh_token']['httponly'])

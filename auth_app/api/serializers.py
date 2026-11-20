@@ -92,8 +92,8 @@ class VerifyOTPSerializer(serializers.Serializer):
 class LoginSerializer(TokenObtainPairSerializer):
     """Serializer for user login."""
     class Meta:
-        model = User
-        fields = ['username', 'password']
+        model = CustomUser
+        fields = ['email', 'password']
         extra_kwargs = {
             'password': {'write_only': True}
         }
@@ -101,17 +101,17 @@ class LoginSerializer(TokenObtainPairSerializer):
     def __init__(self, *args, **kwargs):
         """Make credentials optional at field level for custom missing-field validation."""
         super().__init__(*args, **kwargs)
-        self.fields['username'].required = False
+        self.fields['email'].required = False
         self.fields['password'].required = False
 
     def validate(self, attrs):
         """
         Validate the login credentials.
         """
-        username = attrs.get('username')
+        email = attrs.get('email')
         password = attrs.get('password')
 
-        if not username or not password:
-            raise AuthenticationFailed("Username and password are required")
+        if not email or not password:
+            raise AuthenticationFailed("Email and password are required")
 
         return super().validate(attrs)

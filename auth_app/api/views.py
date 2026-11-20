@@ -60,9 +60,10 @@ class VerifyOTPView(APIView):
     """API view for verifying OTP during registration."""
     permission_classes = PUBLIC_PERMISSIONS
     authentication_classes = (CookieJWTAuthentication,)
+    serializer_class = VerifyOTPSerializer
 
     def get(self, request, **kwargs):
-        serializer = VerifyOTPSerializer(data=kwargs)
+        serializer = self.serializer_class(data=kwargs)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -146,8 +147,7 @@ class CookieTokenObtainPairView(TokenObtainPairView):
                 'detail': 'Login successfully!',
                 'user': {
                     'id': user.pk,
-                    'username': user.username,
-                    'email': user.email,
+                    'username': user.email,
                 },
             },
             status=status.HTTP_200_OK,
