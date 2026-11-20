@@ -66,13 +66,19 @@ class VerifyOTPView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        try:
+            uid = serializer.validated_data.get('uidb64')
+        except Exception as e:
+            logger.error("Failed to decode UID: %s", e)
+            return Response({'message': 'Activation failed.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:    
             user = CustomUser.objects.get(
-                pk=decode_uidb64(serializer.validated_data.get('uidb64')), 
+                pk=uid, 
                 otp=serializer.validated_data.get('token')
                 )
         except CustomUser.DoesNotExist as e:
-            logger.error("Failed to decode UID: %s", e)
+            logger.error("Failed to get user: %s", e)
             return Response({'message': 'Activation failed.'}, status=status.HTTP_400_BAD_REQUEST)
         
         user.is_verified = True

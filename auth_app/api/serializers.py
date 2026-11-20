@@ -70,15 +70,23 @@ class VerifyOTPSerializer(serializers.Serializer):
         model = CustomUser
         fields = ['uidb64', 'token']
 
-    def validate_token(self, value):
-        """Ensure the token is correct for the given user ID."""
+    def validate_uidb64(self, value):
+        """Ensure the UID is valid and decodable."""
         try:
-            user_id = decode_uidb64(self.initial_data.get('uidb64'))
+            decoded_user_id = decode_uidb64(value)
+            return int(decoded_user_id)
         except (TypeError, ValueError, OverflowError):
             raise serializers.ValidationError("Invalid UID")
-        if user_id and not CustomUser.objects.filter(id=user_id, otp=value).exists():
-            raise serializers.ValidationError("Invalid OTP")
-        return value
+
+
+    def validate(self, attrs):
+        """Ensure the OTP is valid for the given user ID."""
+        if not CustomUser.objects.filter(
+            pk=attrs["uidb64"],
+            otp=attrs["token"],
+        ).exists():
+            raise serializers.ValidationError({"token": "Invalid OTP"})
+        return attrs
 
 
 class LoginSerializer(TokenObtainPairSerializer):
