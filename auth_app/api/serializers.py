@@ -28,6 +28,8 @@ class CustomUserSerializer(serializers.ModelSerializer):
         )
 
 
+
+
 class RegistrationSerializer(serializers.ModelSerializer):
     """Serializer for user registration, including password confirmation."""
 
@@ -131,3 +133,19 @@ class LoginSerializer(TokenObtainPairSerializer):
             raise AuthenticationFailed("Email and password are required")
 
         return super().validate(attrs)
+
+class PasswordResetSerializer(serializers.Serializer):
+    """Serializer for password reset requests."""
+
+    email = serializers.EmailField(required=True)
+
+    class Meta:
+        model = CustomUser
+        fields = ["email"]
+
+    def validate_email(self, value):
+        """Ensure the email exists in the system."""
+        value = value.strip().lower()
+        if not CustomUser.objects.filter(email=value).exists():
+            raise serializers.ValidationError("User with this email does not exist")
+        return value
