@@ -127,7 +127,7 @@ class CookieTokenObtainPairView(TokenObtainPairView):
     """API view for obtaining JWT tokens and setting them as HttpOnly cookies."""
     permission_classes = PUBLIC_PERMISSIONS
     serializer_class = LoginSerializer
-    authentication_classes = (CookieJWTAuthentication,)
+    authentication_classes = ()
 
     def get_valid_login_serializer(self, data):
         serializer = self.get_serializer(data=data)
