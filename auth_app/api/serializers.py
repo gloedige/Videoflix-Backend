@@ -4,6 +4,10 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import AuthenticationFailed
 
 from auth_app.models import CustomUser
+from auth_app.utils import decode_uidb64
+
+import logging
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -56,6 +60,26 @@ class RegistrationSerializer(serializers.ModelSerializer):
             return account
         except KeyError:
             raise serializers.ValidationError("Password is required")
+
+class VerifyOTPSerializer(serializers.Serializer):
+    """Serializer for verifying OTP."""
+    uidb64 = serializers.CharField(required=True)
+    token = serializers.CharField(required=True)
+
+    class Meta:
+        model = CustomUser
+        fields = ['uidb64', 'token']
+
+    def validate_token(self, value):
+        """Ensure the token is correct for the given user ID."""
+        try:
+            user_id = decode_uidb64(self.initial_data.get('uidb64'))
+        except (TypeError, ValueError, OverflowError):
+            raise serializers.ValidationError("Invalid UID")
+        if user_id and not CustomUser.objects.filter(id=user_id, otp=value).exists():
+            raise serializers.ValidationError("Invalid OTP")
+        return value
+
 
 class LoginSerializer(TokenObtainPairSerializer):
     """Serializer for user login."""

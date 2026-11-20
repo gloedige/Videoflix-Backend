@@ -16,8 +16,9 @@ from auth_app.api.authentication import CookieJWTAuthentication
 from auth_app.models import CustomUser
 from auth_app.utils import generate_otp
 from core.settings import CUSTOM_ACCESS_COOKIE_LIFETIME, CUSTOM_REFRESH_COOKIE_LIFETIME
-from .serializers import LoginSerializer, RegistrationSerializer
+from .serializers import LoginSerializer, RegistrationSerializer, VerifyOTPSerializer
 from auth_app.email import send_activation_email
+from auth_app.utils import decode_uidb64
 
 import logging
 
@@ -60,16 +61,24 @@ class VerifyOTPView(APIView):
     permission_classes = PUBLIC_PERMISSIONS
     authentication_classes = (CookieJWTAuthentication,)
 
-    def post(self, request):
-        email = request.data.get('email')
-        otp_entered = request.data.get('otp')
-        try:
-            user = CustomUser.objects.get(email=email, otp=otp_entered)
-            user.is_verified = True
-            user.save()
-            return Response({'message': 'Account successfully activated.'}, status=status.HTTP_200_OK)
-        except CustomUser.DoesNotExist:
+    def get(self, request, **kwargs):
+        serializer = VerifyOTPSerializer(data=kwargs)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:    
+            user = CustomUser.objects.get(
+                pk=decode_uidb64(serializer.validated_data.get('uidb64')), 
+                otp=serializer.validated_data.get('token')
+                )
+        except CustomUser.DoesNotExist as e:
+            logger.error("Failed to decode UID: %s", e)
             return Response({'message': 'Activation failed.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        user.is_verified = True
+        user.otp = None
+        user.save(update_fields=['is_verified', 'otp'])
+        return Response({'message': 'Account successfully activated.'}, status=status.HTTP_200_OK)
 
 
 class RegistrationView(APIView):
