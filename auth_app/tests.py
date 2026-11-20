@@ -449,3 +449,22 @@ class AuthenticationEndpointTest(TestCase):
 
         self.assertEqual(response.status_code, 401)
         self.assertIn('detail', response.data)
+
+    def test_reset_password_valid_email_send(self):
+        """Sending a password reset request with a valid email should succeed."""
+        self.create_user('reset@example.com', is_verified=True, otp='123456')
+        response = self.client.post('/api/password_reset/', {'email': 'reset@example.com'}, format='json')
+        self.assertEqual(response.status_code, 200)
+
+    def test_reset_password_invalid_email_send(self):
+        """Sending a password reset request with an invalid email should fail."""
+        self.create_user('reset@example.com', is_verified=True, otp='123456')
+        response = self.client.post('/api/password_reset/', {'email': 'nonexistent@example.com'}, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('email', response.data)
+
+    def test_reset_password_email_in_capitals(self): 
+        """Sending a password reset request with an email in capital letters should succeed."""
+        self.create_user('reset@example.com', is_verified=True, otp='123456')
+        response = self.client.post('/api/password_reset/', {'email': 'RESET@EXAMPLE.COM'}, format='json')
+        self.assertEqual(response.status_code, 200)
