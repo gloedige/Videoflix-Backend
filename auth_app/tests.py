@@ -177,7 +177,7 @@ class AuthenticationEndpointTest(TestCase):
     def test_registration_verifies_otp_with_invalid_uid(self):
         """Reject OTP verification when the UID is invalid."""
         user = self.create_user('user@example.com', is_verified=False, otp='123456')
-        uidb64 = 'invalid-uid'
+        uidb64 = encode_user_id('invalid-uid')
         token = '123456'
         response = self.client.get(f'/api/activate/{uidb64}/{token}/')
 
@@ -185,3 +185,44 @@ class AuthenticationEndpointTest(TestCase):
         user.refresh_from_db()
         self.assertFalse(user.is_verified)
         self.assertEqual(user.otp, '123456')
+
+    def test_registration_valid_uid_no_corresponding_user(self):
+        """Reject OTP verification when the UID is valid but no corresponding user exists."""
+        uidb64 = encode_user_id(9999)  # Assuming this user ID does not exist
+        token = '123456'
+        response = self.client.get(f'/api/activate/{uidb64}/{token}/')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('token', response.data)
+
+    def test_activation_returns_404_when_uid_path_segment_is_missing(self):
+        """Reject OTP verification when the UID is missing."""
+        token = '123456'
+        response = self.client.get(f'/api/activate//{token}/')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_activation_returns_404_when_token_path_segment_is_missing(self):
+        """Reject OTP verification when the token is missing."""
+        user = self.create_user('user@example.com', is_verified=False, otp='123456')
+        uidb64 = encode_user_id(user.pk)
+        response = self.client.get(f'/api/activate/{uidb64}/')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_registration_second_activation_attempt(self):
+        """Reject a second activation attempt with the same OTP."""
+        user = self.create_user('user@example.com', is_verified=False, otp='123456')
+        uidb64 = encode_user_id(user.pk)
+        token = '123456'
+        # First activation attempt
+        response = self.client.get(f'/api/activate/{uidb64}/{token}/')
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertTrue(user.is_verified)
+        self.assertIsNone(user.otp)
+
+        # Second activation attempt with the same OTP
+        response = self.client.get(f'/api/activate/{uidb64}/{token}/')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('token', response.data)
