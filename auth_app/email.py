@@ -1,16 +1,16 @@
-# Django imports
-from django.core.mail import EmailMultiAlternatives
+import logging
+from pathlib import Path
+
 from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 
-# Local imports
 from auth_app.utils import encode_user_id
 
-import logging
 logger = logging.getLogger(__name__)
 
 LOGO_CID = 'videoflix-logo'
-LOGO_PATH = 'auth_app/templates/videoflix-logo.svg'
+LOGO_PATH = Path(__file__).resolve().parent / 'static' / 'auth_app' /'videoflix-logo.svg'
 
 def send_activation_email(target_email, user_id, otp):
     '''Send an OTP email to the target email address for email verification.'''
@@ -65,7 +65,7 @@ def _send_email(subject, message_content, html_content, to):
 def _get_html_content(link, username, auth_type):
     '''Generate the HTML content for the activation or reset email.'''
     return render_to_string(
-        f'{auth_type}_email.html', 
+        f'auth_app/{auth_type}_email.html', 
         context={
             'logo_cid': LOGO_CID,
             f'{auth_type}_link': link,
