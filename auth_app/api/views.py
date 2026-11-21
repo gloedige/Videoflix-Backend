@@ -327,7 +327,6 @@ class PasswordResetConfirmView(APIView):
     def validate_confirmed_password(self, request):
         """Validate that the new password and confirmed password match."""
         new_password = request.data.get('new_password')
-        confirmed_password = request.data.get('confirmed_password')
-        return new_password == confirmed_password
-
+        confirm_password = request.data.get('confirm_password')
+        return new_password == confirm_password
     
