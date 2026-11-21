@@ -34,7 +34,7 @@ def send_password_reset_email(target_email, user_id, otp):
     html_content = _get_html_content(reset_link, username, 'reset')
 
     _send_email(subject, message_content, html_content, to)
-    logger.info(f"PASSWORD RESET LINK {reset_link} for {target_email}") # TODO: only for development
+    logger.warning(f"PASSWORD RESET LINK {reset_link} for {target_email}") # TODO: only for development
 
 
 def _build_activation_link(user_id, otp):
@@ -46,7 +46,7 @@ def _build_activation_link(user_id, otp):
 def _build_reset_link(user_id, otp):
     '''Build the password reset link using the user ID and OTP.'''
     uidb64 = encode_user_id(user_id)
-    frontend_reset_path = '/pages/auth/forgot_password.html'
+    frontend_reset_path = '/pages/auth/confirm_password.html'
     return f"{settings.FRONTEND_AUTH_URL}{frontend_reset_path}?uid={uidb64}&token={otp}"
 
 def _extract_username_from_email(email):
