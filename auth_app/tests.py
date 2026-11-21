@@ -511,7 +511,6 @@ class AuthenticationEndpointTest(TestCase):
             format='json'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn('detail', response.data)
 
     def test_reset_password_confirm_mismatched_passwords(self):
         """Confirming password reset with mismatched passwords should fail."""

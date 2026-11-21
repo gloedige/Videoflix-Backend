@@ -70,7 +70,10 @@ class VerifyOTPView(APIView):
     def get(self, request, **kwargs):
         serializer = self.serializer_class(data=kwargs)
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                serializer.errors, 
+                status=status.HTTP_400_BAD_REQUEST
+                )
 
         try:
             uid = serializer.validated_data.get('uidb64')
@@ -287,11 +290,13 @@ class PasswordResetConfirmView(APIView):
     def post(self, request, **kwargs):
         """Handle password reset confirmation."""
         serializer = self.serializer_class(data=kwargs)
+
         if not serializer.is_valid():
+            logger.error("Invalid serializer data: %s", serializer.errors)
             return Response(
-                {"detail": serializer.errors},
+                serializer.errors, 
                 status=status.HTTP_400_BAD_REQUEST
-            )
+                )
         
         if not self.validate_confirmed_password(request):
             return Response(
