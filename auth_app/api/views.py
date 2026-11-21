@@ -268,13 +268,61 @@ class PasswordResetView(APIView):
                 user.save()
                 send_password_reset_email(email, user.id, user.otp)
         except IntegrityError:
-                logger.exception("Fehler bei der Registrierung")
+                logger.exception("Error during password reset")
                 return Response(
-                    {"detail": "A user with this username or email already exists."},
+                    {"detail": "Error occurred during password reset."},
                     status=status.HTTP_400_BAD_REQUEST,
             )
         return Response(
             {"detail": "An email has been sent to reset your password."},
             status=status.HTTP_200_OK
         )
-            
+
+class PasswordResetConfirmView(APIView):
+    """API view for handling password reset confirmation."""
+    permission_classes = PUBLIC_PERMISSIONS
+    authentication_classes = ()
+    serializer_class = VerifyOTPSerializer
+
+    def post(self, request, **kwargs):
+        """Handle password reset confirmation."""
+        serializer = self.serializer_class(data=kwargs)
+        if not serializer.is_valid():
+            return Response(
+                {"detail": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not self.validate_confirmed_password(request):
+            return Response(
+                {"detail": "Passwords do not match."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            with transaction.atomic():
+                user = CustomUser.objects.get(
+                    id=serializer.validated_data.get('uidb64'), 
+                    otp=serializer.validated_data.get('token')
+                    )
+                user.set_password(request.data.get('new_password'))
+                user.otp = None
+                user.save()
+        except (CustomUser.DoesNotExist, IntegrityError):
+            logger.exception("Error during password reset confirmation")
+            return Response(
+                {"detail": "Error occurred during password reset confirmation."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            {"detail": "Password has been reset successfully."},
+            status=status.HTTP_200_OK
+        )
+
+    def validate_confirmed_password(self, request):
+        """Validate that the new password and confirmed password match."""
+        new_password = request.data.get('new_password')
+        confirmed_password = request.data.get('confirmed_password')
+        return new_password == confirmed_password
+
+    
