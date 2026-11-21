@@ -123,7 +123,6 @@ class AuthenticationEndpointTest(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        # self.assertTrue(User.objects.filter(username='existing@example.com').exists())
         self.assertTrue(User.objects.filter(email='existing@example.com').exists())
 
 
@@ -366,8 +365,6 @@ class AuthenticationEndpointTest(TestCase):
         response = self.client.post('/api/logout/', HTTP_AUTHORIZATION=f'Bearer {access_token}')
         self.assertEqual(response.status_code, 401)
 
-
-
     def test_refresh_without_refresh_token(self):
         """Refreshing without a refresh token should fail."""
         response = self.client.post('/api/token/refresh/', {}, format='json')
@@ -468,3 +465,66 @@ class AuthenticationEndpointTest(TestCase):
         self.create_user('reset@example.com', is_verified=True, otp='123456')
         response = self.client.post('/api/password_reset/', {'email': 'RESET@EXAMPLE.COM'}, format='json')
         self.assertEqual(response.status_code, 200)
+
+    def test_reset_password_confirm_valid(self):
+        """Confirming password reset with valid data should succeed."""
+        user = self.create_user('reset@example.com', is_verified=True, otp='123456')
+        uidb64 = encode_user_id(user.id)
+        token = '123456'
+        response = self.client.post(
+            f'/api/password_confirm/{uidb64}/{token}/',
+            {
+                'new_password': 'newpass',
+                'confirmed_password': 'newpass'
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('detail', response.data)
+
+    def test_reset_password_confirm_invalid_token(self):
+        """Confirming password reset with an invalid token should fail."""
+        user = self.create_user('reset@example.com', is_verified=True, otp='123456')
+        uidb64 = encode_user_id(user.id)
+        token = 'wrongtoken'
+        response = self.client.post(
+            f'/api/password_confirm/{uidb64}/{token}/',
+            {
+                'new_password': 'newpass',
+                'confirmed_password': 'newpass'
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('detail', response.data)
+
+    def test_reset_password_confirm_invalid_uid(self):
+        """Confirming password reset with an invalid uid should fail."""
+        uidb64 = encode_user_id('invaliduid')
+        token = '123456'
+        response = self.client.post(
+            f'/api/password_confirm/{uidb64}/{token}/',
+            {
+                'new_password': 'newpass',
+                'confirmed_password': 'newpass'
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('detail', response.data)
+
+    def test_reset_password_confirm_mismatched_passwords(self):
+        """Confirming password reset with mismatched passwords should fail."""
+        user = self.create_user('reset@example.com', is_verified=True, otp='123456')
+        uidb64 = encode_user_id(user.id)
+        token = '123456'
+        response = self.client.post(
+            f'/api/password_confirm/{uidb64}/{token}/',
+            {
+                'new_password': 'newpass',
+                'confirmed_password': 'differentpass'
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('detail', response.data)
