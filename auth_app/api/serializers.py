@@ -147,8 +147,5 @@ class PasswordResetSerializer(serializers.Serializer):
         fields = ("email",)
 
     def validate_email(self, value):
-        """Ensure the email exists in the system."""
-        value = value.strip().lower()
-        if not CustomUser.objects.filter(email=value).exists():
-            raise serializers.ValidationError("User with this email does not exist")
-        return value
+        """Ensure the email has valid format."""
+        return value.strip().lower()

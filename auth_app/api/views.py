@@ -1,5 +1,6 @@
 import logging
 
+from django.conf.locale import tr
 from django.db import IntegrityError, transaction
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
@@ -290,25 +291,25 @@ class PasswordResetView(APIView):
     def handle_password_reset(self, serializer):
         '''Handle the actual password reset logic.'''
         email = serializer.validated_data.get('email')
-        try:
-            with transaction.atomic():
-                user = CustomUser.objects.get(email=email)
-                user.otp = generate_otp()
-                user.save()
-                send_password_reset_email(email, user.id, user.otp)
-        except IntegrityError:
-            logger.exception("Error during password reset")
-            return self.handle_password_reset_error()
+        
+
+        try: 
+            user = CustomUser.objects.get(email=email)
+        except CustomUser.DoesNotExist:
+            user = None
+        
+        if user is not None:
+            try:
+                with transaction.atomic():
+                    user.otp = generate_otp()
+                    user.save()
+                    send_password_reset_email(email, user.id, user.otp)
+            except IntegrityError:
+                logger.exception("Error during password reset")
+
         return Response(
             {"detail": "An email has been sent to reset your password."},
             status=status.HTTP_200_OK
-        )
-    
-    def handle_password_reset_error(self):
-        '''Handle errors during password reset.'''
-        return Response(
-            {"detail": "Error occurred during password reset."},
-            status=status.HTTP_400_BAD_REQUEST,
         )
     
 class PasswordResetConfirmView(APIView):
