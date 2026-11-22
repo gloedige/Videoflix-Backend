@@ -186,7 +186,7 @@ class CookieTokenObtainPairView(TokenObtainPairView):
 class CookieRefreshView(TokenRefreshView):
     '''API view for refreshing JWT tokens using HttpOnly cookies.'''
     permission_classes = PUBLIC_PERMISSIONS
-    authentication_classes = (CookieJWTAuthentication,)
+    authentication_classes = ()
     serializer_class = TokenRefreshSerializer
     
     def post(self, request, *args, **kwargs):
