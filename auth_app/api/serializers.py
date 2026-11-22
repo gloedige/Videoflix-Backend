@@ -96,7 +96,7 @@ class VerifyOTPSerializer(serializers.Serializer):
             decoded_user_id = decode_uidb64(value)
             return int(decoded_user_id)
         except (TypeError, ValueError, OverflowError):
-            raise serializers.ValidationError("Invalid UID")
+            raise serializers.ValidationError({"uidb64": "Invalid UID"})
 
     def validate(self, attrs):
         """Ensure the OTP is valid for the given user ID."""

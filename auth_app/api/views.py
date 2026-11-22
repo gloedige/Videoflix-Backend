@@ -292,24 +292,31 @@ class PasswordResetConfirmView(APIView):
         serializer = self.serializer_class(data=kwargs)
 
         if not serializer.is_valid():
-            logger.error("Invalid serializer data: %s", serializer.errors)
             return Response(
                 serializer.errors, 
                 status=status.HTTP_400_BAD_REQUEST
                 )
         
-        if not self.validate_confirmed_password(request):
+        if not self.check_passwords_match(request):
+            logger.error("Password reset failed: passwords do not match")
             return Response(
                 {"detail": "Passwords do not match."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        return self.reset_password(request, serializer)
+
+    def check_passwords_match(self, request):
+        """Validate that the new password and confirmed password match."""
+        new_password = request.data.get('new_password')
+        confirm_password = request.data.get('confirm_password')
+        return new_password == confirm_password
+    
+    def reset_password(self, request, serializer):
+        """Reset the user's password using the provided serializer."""
         try:
             with transaction.atomic():
-                user = CustomUser.objects.get(
-                    id=serializer.validated_data.get('uidb64'), 
-                    otp=serializer.validated_data.get('token')
-                    )
+                user = self.load_user_by_uid_and_token(serializer)
                 user.set_password(request.data.get('new_password'))
                 user.otp = None
                 user.save()
@@ -324,9 +331,9 @@ class PasswordResetConfirmView(APIView):
             status=status.HTTP_200_OK
         )
 
-    def validate_confirmed_password(self, request):
-        """Validate that the new password and confirmed password match."""
-        new_password = request.data.get('new_password')
-        confirm_password = request.data.get('confirm_password')
-        return new_password == confirm_password
-    
+    def load_user_by_uid_and_token(self, serializer):
+        """Load the user based on the UID and OTP token from the serializer."""
+        return CustomUser.objects.get(
+                    id=serializer.validated_data.get('uidb64'), 
+                    otp=serializer.validated_data.get('token')
+                    )
