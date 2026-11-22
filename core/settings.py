@@ -240,3 +240,4 @@ LOGGING = {
 
 AUTH_USER_MODEL = 'auth_app.CustomUser'
 
+OTP_EXPIRATION_TIME = 24 * 60 * 60  # in seconds, OTP valid for 24 hours
