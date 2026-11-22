@@ -15,6 +15,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from auth_app.api.authentication import CookieJWTAuthentication
+from auth_app.api.throttling import VerifyOTPThrottle
 from auth_app.email import send_activation_email, send_password_reset_email
 from auth_app.models import CustomUser
 from auth_app.utils import generate_otp
@@ -66,6 +67,7 @@ class VerifyOTPView(APIView):
     permission_classes = PUBLIC_PERMISSIONS
     authentication_classes = (CookieJWTAuthentication,)
     serializer_class = VerifyOTPSerializer
+    throttle_classes = (VerifyOTPThrottle,)
 
     def get(self, request, **kwargs):
         '''Handle GET request for OTP verification during registration.'''

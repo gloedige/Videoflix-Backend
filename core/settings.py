@@ -194,6 +194,16 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'auth_app.api.authentication.CookieJWTAuthentication',
     ),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/day',
+        'user': '1000/day',
+        'verify_otp': '5/min',
+    }
 }
 
 CUSTOM_ACCESS_COOKIE_LIFETIME = 10 * 60  # in seconds, matches ACCESS_TOKEN_LIFETIME of 10 minutes
@@ -227,3 +237,4 @@ LOGGING = {
 }
 
 AUTH_USER_MODEL = 'auth_app.CustomUser'
+

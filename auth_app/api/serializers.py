@@ -1,4 +1,5 @@
 import logging
+from typing import ClassVar
 
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
@@ -38,12 +39,14 @@ class RegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ["email", "password", "confirmed_password", "is_verified", "otp"]
-        extra_kwargs = {
+        fields = (
+            "email", 
+            "password", 
+            "confirmed_password"
+            )
+        extra_kwargs: ClassVar[dict[str, dict[str, bool]]] = {
             "password": {"write_only": True},
             "email": {"write_only": True},
-            "is_verified": {"write_only": True},
-            "otp": {"write_only": True},
         }
 
     def validate_email(self, value):
@@ -88,7 +91,7 @@ class VerifyOTPSerializer(serializers.Serializer):
 
     class Meta:
         model = CustomUser
-        fields = ["uidb64", "token"]
+        fields = ("uidb64", "token")
 
     def validate_uidb64(self, value):
         """Ensure the UID is valid and decodable."""
@@ -113,7 +116,7 @@ class LoginSerializer(TokenObtainPairSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ["email", "password"]
+        fields = ("email", "password")
         extra_kwargs = {"password": {"write_only": True}}
 
     def __init__(self, *args, **kwargs):
@@ -141,7 +144,7 @@ class PasswordResetSerializer(serializers.Serializer):
 
     class Meta:
         model = CustomUser
-        fields = ["email"]
+        fields = ("email",)
 
     def validate_email(self, value):
         """Ensure the email exists in the system."""
