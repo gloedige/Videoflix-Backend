@@ -276,6 +276,7 @@ class PasswordResetView(APIView):
     permission_classes = PUBLIC_PERMISSIONS
     authentication_classes = ()
     serializer_class = PasswordResetSerializer
+    throttle_classes = (VerifyOTPThrottle,)
 
     def post(self, request, **kwargs):
         '''Handle password reset request.'''
