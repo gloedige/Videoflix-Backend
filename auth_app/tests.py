@@ -475,7 +475,7 @@ class AuthenticationEndpointTest(TestCase):
             f'/api/password_confirm/{uidb64}/{token}/',
             {
                 'new_password': 'newpass',
-                'confirmed_password': 'newpass'
+                'confirm_password': 'newpass'
             },
             format='json'
         )
@@ -491,12 +491,12 @@ class AuthenticationEndpointTest(TestCase):
             f'/api/password_confirm/{uidb64}/{token}/',
             {
                 'new_password': 'newpass',
-                'confirmed_password': 'newpass'
+                'confirm_password': 'newpass'
             },
             format='json'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn('detail', response.data)
+        self.assertIn('token', response.data)
 
     def test_reset_password_confirm_invalid_uid(self):
         """Confirming password reset with an invalid uid should fail."""
@@ -506,11 +506,12 @@ class AuthenticationEndpointTest(TestCase):
             f'/api/password_confirm/{uidb64}/{token}/',
             {
                 'new_password': 'newpass',
-                'confirmed_password': 'newpass'
+                'confirm_password': 'newpass'
             },
             format='json'
         )
         self.assertEqual(response.status_code, 400)
+        self.assertIn('uidb64', response.data)
 
     def test_reset_password_confirm_mismatched_passwords(self):
         """Confirming password reset with mismatched passwords should fail."""
@@ -521,7 +522,7 @@ class AuthenticationEndpointTest(TestCase):
             f'/api/password_confirm/{uidb64}/{token}/',
             {
                 'new_password': 'newpass',
-                'confirmed_password': 'differentpass'
+                'confirm_password': 'differentpass'
             },
             format='json'
         )
