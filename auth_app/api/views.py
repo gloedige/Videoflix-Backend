@@ -102,10 +102,11 @@ class RegistrationView(APIView):
     ''' API view for user registration. '''
     permission_classes = PUBLIC_PERMISSIONS
     authentication_classes = (CookieJWTAuthentication,)
+    serializer_class = RegistrationSerializer
 
     def post(self, request):
         '''Handle user registration.'''
-        serializer = RegistrationSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
 
         if not serializer.is_valid():
             return Response(
