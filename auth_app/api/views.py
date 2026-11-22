@@ -19,7 +19,7 @@ from auth_app.api.throttling import VerifyOTPThrottle
 from auth_app.email import send_activation_email, send_password_reset_email
 from auth_app.models import CustomUser
 from auth_app.utils import generate_otp
-from core.settings import CUSTOM_ACCESS_COOKIE_LIFETIME, CUSTOM_REFRESH_COOKIE_LIFETIME
+from core.settings import CUSTOM_ACCESS_COOKIE_LIFETIME, CUSTOM_REFRESH_COOKIE_LIFETIME, AUTH_COOKIE_SECURE
 
 from .serializers import (
     LoginSerializer,
@@ -40,7 +40,7 @@ def set_auth_cookies(response, access_token, new_refresh_token):
             value=access_token,
             max_age=CUSTOM_ACCESS_COOKIE_LIFETIME,
             httponly=True,
-            secure=True,
+            secure=AUTH_COOKIE_SECURE,
             samesite='Lax',
             path='/',
         )
@@ -51,7 +51,7 @@ def set_auth_cookies(response, access_token, new_refresh_token):
             value=new_refresh_token,
             max_age=CUSTOM_REFRESH_COOKIE_LIFETIME,
             httponly=True,
-            secure=True,
+            secure=AUTH_COOKIE_SECURE,
             samesite='Lax',
             path='/',
         )
