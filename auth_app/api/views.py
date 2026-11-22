@@ -1,9 +1,8 @@
 import logging
 
-from django.conf.locale import tr
 from django.db import IntegrityError, transaction
 from rest_framework import status
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -19,8 +18,12 @@ from auth_app.api.authentication import CookieJWTAuthentication
 from auth_app.api.throttling import VerifyOTPThrottle
 from auth_app.email import send_activation_email, send_password_reset_email
 from auth_app.models import CustomUser
-from auth_app.utils import generate_otp
-from core.settings import CUSTOM_ACCESS_COOKIE_LIFETIME, CUSTOM_REFRESH_COOKIE_LIFETIME, AUTH_COOKIE_SECURE
+from auth_app.utils import check_otp_expiration, generate_otp, get_otp_expiration_time
+from core.settings import (
+    AUTH_COOKIE_SECURE,
+    CUSTOM_ACCESS_COOKIE_LIFETIME,
+    CUSTOM_REFRESH_COOKIE_LIFETIME,
+)
 
 from .serializers import (
     LoginSerializer,
@@ -63,6 +66,13 @@ def delete_session_cookies(response):
     response.delete_cookie('refresh_token', path='/')
     return response
 
+def fetch_user(serializer):
+        '''Fetch the user based on the UID and OTP token from the serializer.'''
+        return CustomUser.objects.get(
+                pk=serializer.validated_data.get('uidb64'), 
+                otp=serializer.validated_data.get('token')
+                )
+
 class VerifyOTPView(APIView):
     """API view for verifying OTP during registration."""
     permission_classes = PUBLIC_PERMISSIONS
@@ -84,22 +94,38 @@ class VerifyOTPView(APIView):
     def activate_user(self, serializer):
         '''Activate the user based on the validated serializer data.'''
         try:
-            user = self.fetch_user(serializer)
-            user.is_verified = True
-            user.otp = None
-            user.save(update_fields=['is_verified', 'otp'])
+            user = fetch_user(serializer)
         except CustomUser.DoesNotExist as e:
             logger.error("Failed to get user: %s", e)
-            return Response({'message': 'Activation failed.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        return Response({'message': 'Account successfully activated.'}, status=status.HTTP_200_OK)
-
-    def fetch_user(self, serializer):
-        '''Fetch the user based on the UID and OTP token from the serializer.'''
-        return CustomUser.objects.get(
-                pk=serializer.validated_data.get('uidb64'), 
-                otp=serializer.validated_data.get('token')
+            return Response(
+                {'message': 'Activation failed.'}, 
+                status=status.HTTP_400_BAD_REQUEST
                 )
+
+        try:
+            self.check_and_activate_user(user)
+        except ValidationError as e:
+            logger.error("Failed to activate user: %s", e)
+            return Response(
+                {'message': 'Activation failed.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+                )
+
+        return Response(
+            {'message': 'Account successfully activated.'}, 
+            status=status.HTTP_200_OK
+            )
+        
+
+    def check_and_activate_user(self, user):
+        '''Check if the OTP is still valid and activate the user if it is.'''
+        if check_otp_expiration(user.otp_expires_at):    
+            user.is_verified = True
+            user.otp = None
+            user.otp_expires_at = None
+            user.save(update_fields=['is_verified', 'otp', 'otp_expires_at'])
+        else:
+            raise ValidationError("OTP has expired.")
 
 class RegistrationView(APIView):
     ''' API view for user registration. '''
@@ -128,6 +154,7 @@ class RegistrationView(APIView):
             with transaction.atomic():
                 user = serializer.save()
                 user.otp = generate_otp()
+                user.otp_expires_at = get_otp_expiration_time()
                 user.save()
                 send_activation_email(user.email, user.pk, user.otp)
         except IntegrityError:
@@ -303,6 +330,7 @@ class PasswordResetView(APIView):
             try:
                 with transaction.atomic():
                     user.otp = generate_otp()
+                    user.otp_expires_at = get_otp_expiration_time()
                     user.save()
                     send_password_reset_email(email, user.id, user.otp)
             except IntegrityError:
@@ -344,24 +372,38 @@ class PasswordResetConfirmView(APIView):
         confirm_password = request.data.get('confirm_password')
         return bool(new_password and confirm_password and new_password == confirm_password)
     
+    
+    
     def reset_password(self, request, serializer):
         '''Reset the user's password using the provided serializer.'''
         try:
-            with transaction.atomic():
-                user = self.load_user_by_uid_and_token(serializer)
-                user.set_password(request.data.get('new_password'))
-                user.otp = None
-                user.save()
+            user = fetch_user(serializer)
         except CustomUser.DoesNotExist:
             logger.exception("User not found during password reset confirmation")
             return self.handle_user_not_found()
-        except IntegrityError:
-            logger.exception("Error during password reset confirmation")
-            return self.handle_integrity_error()
+
+        try:
+            self.check_user_and_set_password(user, request)
+        except ValidationError:
+            logger.exception("OTP has expired during password reset confirmation")
+            return Response(
+                {"detail": "OTP has expired."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         return Response(
             {"detail": "Password has been reset successfully."},
             status=status.HTTP_200_OK
         )
+    
+    def check_user_and_set_password(self, user, request):
+        if check_otp_expiration(user.otp_expires_at):
+            user.set_password(request.data.get('new_password'))
+            user.otp = None
+            user.otp_expires_at = None
+            user.save(update_fields=['password', 'otp', 'otp_expires_at'])
+        else:
+            raise ValidationError("OTP has expired.")
     
     def handle_user_not_found(self):
         '''Handle the case when the user is not found.'''
@@ -369,16 +411,3 @@ class PasswordResetConfirmView(APIView):
             {"detail": "Custom user not found."},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    def handle_integrity_error(self):
-        '''Handle integrity errors during password reset confirmation.'''
-        return Response(
-            {"detail": "Error occurred during password reset confirmation."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    def load_user_by_uid_and_token(self, serializer):
-        '''Load the user based on the UID and OTP token from the serializer.'''
-        return CustomUser.objects.get(
-                    id=serializer.validated_data.get('uidb64'), 
-                    otp=serializer.validated_data.get('token')
-                    )
