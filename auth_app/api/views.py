@@ -340,7 +340,7 @@ class PasswordResetConfirmView(APIView):
         '''Validate that the new password and confirmed password match.'''
         new_password = request.data.get('new_password')
         confirm_password = request.data.get('confirm_password')
-        return new_password == confirm_password
+        return bool(new_password and confirm_password and new_password == confirm_password)
     
     def reset_password(self, request, serializer):
         '''Reset the user's password using the provided serializer.'''
