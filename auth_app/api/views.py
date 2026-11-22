@@ -254,33 +254,39 @@ class PasswordResetView(APIView):
 
     def post(self, request, **kwargs):
         """Handle password reset request."""
-
         serializer = self.serializer_class(data=request.data)
+
         if not serializer.is_valid():
             return Response(
                 serializer.errors,
                 status=status.HTTP_400_BAD_REQUEST
             )
+        return self.handle_password_reset(serializer)
 
+    def handle_password_reset(self, serializer):
+        """Handle the actual password reset logic."""
         email = serializer.validated_data.get('email')
-        logger.info(f"Password reset requested for email: {email}")
         try:
             with transaction.atomic():
                 user = CustomUser.objects.get(email=email)
-                user.otp = generate_otp()  # Assuming you have a function to generate OTP
+                user.otp = generate_otp()
                 user.save()
                 send_password_reset_email(email, user.id, user.otp)
         except IntegrityError:
-                logger.exception("Error during password reset")
-                return Response(
-                    {"detail": "Error occurred during password reset."},
-                    status=status.HTTP_400_BAD_REQUEST,
-            )
+            logger.exception("Error during password reset")
+            return self.handle_password_reset_error()
         return Response(
             {"detail": "An email has been sent to reset your password."},
             status=status.HTTP_200_OK
         )
-
+    
+    def handle_password_reset_error(self):
+        """Handle errors during password reset."""
+        return Response(
+            {"detail": "Error occurred during password reset."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
 class PasswordResetConfirmView(APIView):
     """API view for handling password reset confirmation."""
     permission_classes = PUBLIC_PERMISSIONS
@@ -320,15 +326,28 @@ class PasswordResetConfirmView(APIView):
                 user.set_password(request.data.get('new_password'))
                 user.otp = None
                 user.save()
-        except (CustomUser.DoesNotExist, IntegrityError):
+        except CustomUser.DoesNotExist:
+            logger.exception("User not found during password reset confirmation")
+            return self.handle_user_not_found()
+        except IntegrityError:
             logger.exception("Error during password reset confirmation")
-            return Response(
-                {"detail": "Error occurred during password reset confirmation."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return self.handle_integrity_error()
         return Response(
             {"detail": "Password has been reset successfully."},
             status=status.HTTP_200_OK
+        )
+    
+    def handle_user_not_found(self):
+        """Handle the case when the user is not found."""
+        return Response(
+            {"detail": "Custom user not found."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    def handle_integrity_error(self):
+        """Handle integrity errors during password reset confirmation."""
+        return Response(
+            {"detail": "Error occurred during password reset confirmation."},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     def load_user_by_uid_and_token(self, serializer):
