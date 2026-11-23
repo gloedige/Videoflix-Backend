@@ -215,7 +215,12 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_registration_verifies_otp(self):
         """Verify that a user can activate their account with a valid OTP."""
-        user = self.create_user('user@example.com', is_verified=False, otp='123456')
+        user = self.create_user(
+            'user@example.com', 
+            is_verified=False, 
+            otp='123456',
+            otp_expires_at=timezone.now() + timedelta(hours=1)
+        )
         uidb64 = encode_user_id(user.pk)
         token = '123456'
         response = self.client.get(f'/api/activate/{uidb64}/{token}/')

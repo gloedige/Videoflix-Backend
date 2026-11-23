@@ -26,7 +26,7 @@ def generate_otp(length=6):
 def check_otp_not_expired(otp_expires_at):
     '''Check if the OTP has expired.'''
     if otp_expires_at is None:
-        return True
+        return False
     return timezone.now() < otp_expires_at
 
 def get_otp_expiration_time():
