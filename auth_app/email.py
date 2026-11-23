@@ -1,4 +1,6 @@
 import logging
+from email import encoders
+from email.mime.base import MIMEBase
 from pathlib import Path
 
 from django.conf import settings
@@ -10,7 +12,7 @@ from auth_app.utils import encode_user_id
 logger = logging.getLogger(__name__)
 
 LOGO_CID = 'videoflix-logo'
-LOGO_PATH = Path(__file__).resolve().parent / 'static' / 'auth_app' /'videoflix-logo.svg'
+LOGO_PATH = Path(__file__).resolve().parent / 'static' / 'auth_app' /'videoflix-logo.png'
 
 def send_activation_email(target_email, user_id, otp):
     '''Send an OTP email to the target email address for email verification.'''
@@ -78,7 +80,20 @@ def _send_email(subject, message_content, html_content, to):
     from_email = settings.DEFAULT_FROM_EMAIL
     message = EmailMultiAlternatives(subject, message_content, from_email, [to])
     message.attach_alternative(html_content, "text/html")
+    logo = get_logo_attachment()
+    message.attach(logo)
+
     message.send(fail_silently=False)
+
+def get_logo_attachment():
+    '''Get the logo attachment for the email.'''
+    with LOGO_PATH.open('rb') as logo_file:
+        logo = MIMEBase('image', 'png')
+        logo.set_payload(logo_file.read())
+    encoders.encode_base64(logo)
+    logo.add_header('Content-ID', f'<{LOGO_CID}>')
+    logo.add_header('Content-Disposition', 'inline', filename=LOGO_PATH.name)
+    return logo
 
 def _get_html_content(link, username, auth_type):
     '''Generate the HTML content for the activation or reset email.'''
