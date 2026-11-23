@@ -295,7 +295,7 @@ class AuthenticationEndpointTest(TestCase):
             'user@example.com', 
             is_verified=False, 
             otp='123456', 
-            otp_expires_at=timezone.now() - timedelta(hours=1)
+            otp_expires_at=timezone.now() + timedelta(hours=1)
             )
         uidb64 = encode_user_id(user.pk)
         token = '123456'
@@ -309,7 +309,7 @@ class AuthenticationEndpointTest(TestCase):
             'user@example.com', 
             is_verified=False, 
             otp='123456', 
-            otp_expires_at=timezone.now() - timedelta(hours=-1)
+            otp_expires_at=timezone.now() + timedelta(hours=-1)
         )
         uidb64 = encode_user_id(user.pk)
         token = '123456'
@@ -556,4 +556,44 @@ class AuthenticationEndpointTest(TestCase):
             format='json'
         )
         self.assertEqual(response.status_code, 400)
+        self.assertIn('detail', response.data)
+
+    def test_reset_password_confirm_expired_otp(self):
+        """Confirming password reset with an expired OTP should fail."""
+        user = self.create_user(
+            'reset@example.com', 
+            is_verified=True, 
+            otp='123456', 
+            otp_expires_at=timezone.now() + timedelta(hours=-1))
+        uidb64 = encode_user_id(user.id)
+        token = '123456'
+        response = self.client.post(
+            f'/api/password_confirm/{uidb64}/{token}/',
+            {
+                'new_password': 'newpass',
+                'confirm_password': 'newpass'
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('detail', response.data)
+
+    def test_reset_password_confirm_not_expired_otp(self):
+        """Confirming password reset with a valid OTP should succeed."""
+        user = self.create_user(
+            'reset@example.com', 
+            is_verified=True, 
+            otp='123456', 
+            otp_expires_at=timezone.now() + timedelta(hours=1))
+        uidb64 = encode_user_id(user.id)
+        token = '123456'
+        response = self.client.post(
+            f'/api/password_confirm/{uidb64}/{token}/',
+            {
+                'new_password': 'newpass',
+                'confirm_password': 'newpass'
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, 200)
         self.assertIn('detail', response.data)
