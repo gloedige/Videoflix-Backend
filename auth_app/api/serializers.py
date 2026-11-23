@@ -2,12 +2,14 @@ import logging
 from typing import ClassVar
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from auth_app.models import CustomUser
-from auth_app.utils import decode_uidb64
+from auth_app.utils import check_otp_not_expired, decode_uidb64
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,16 @@ class RegistrationSerializer(serializers.ModelSerializer):
         value = value.strip().lower()
         if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("Email is already in use")
+        return value
+
+    def validate_password(self, value):
+        """Ensure the password meets basic requirements."""
+        if not value:
+            raise serializers.ValidationError("Password is required")
+        try:
+            validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages) from exc
         return value
 
     def validate(self, attrs):
@@ -149,3 +161,57 @@ class PasswordResetSerializer(serializers.Serializer):
     def validate_email(self, value):
         """Ensure the email has valid format."""
         return value.strip().lower()
+    
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """Serializer for confirming password reset."""
+
+    uidb64 = serializers.CharField(required=True)
+    token = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, write_only=True)
+    confirm_password = serializers.CharField(required=True, write_only=True)
+
+    def validate_uidb64(self, value):
+        """Decode the URL-safe user ID before looking up the account."""
+        try:
+            return int(decode_uidb64(value))
+        except (TypeError, ValueError, OverflowError, UnicodeDecodeError) as exc:
+            raise serializers.ValidationError("Invalid UID") from exc
+
+    def validate(self, attrs):
+        """Ensure the new passwords match."""
+        if attrs["new_password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError(
+                {"confirm_password": "Passwords do not match"}
+            )
+
+        try:
+            user = self.fetch_user(attrs)
+        except CustomUser.DoesNotExist as exc:
+            raise serializers.ValidationError({"token": "Invalid OTP"}) from exc
+
+        if user.otp_expires_at is None or not check_otp_not_expired(user.otp_expires_at):
+            raise serializers.ValidationError({"token": "OTP is invalid or expired"})
+
+        try:
+            validate_password(attrs["new_password"], user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"new_password": exc.messages}) from exc
+
+        attrs["user"] = user
+        return attrs
+
+    def fetch_user(self, validated_data):
+        '''Fetch the user based on the UID and OTP token from the serializer.'''
+        return CustomUser.objects.get(
+                pk=validated_data['uidb64'],
+                otp=validated_data.get('token')
+                )
+    
+    def create(self, validated_data):
+        """Set the new password and consume the one-time reset token."""
+        user = validated_data["user"]
+        user.set_password(validated_data["new_password"])
+        user.otp = None
+        user.otp_expires_at = None
+        user.save(update_fields=["password", "otp", "otp_expires_at"])
+        return user
