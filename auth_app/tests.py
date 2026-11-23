@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from django.db import IntegrityError
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.token_blacklist.models import (
     BlacklistedToken,
@@ -21,14 +22,15 @@ class AuthenticationEndpointTest(TestCase):
         """Create an API client."""
         self.client = APIClient()
 
-    def create_user(self, email, is_verified=False, otp=None):
+    def create_user(self, email, is_verified=False, otp=None, otp_expires_at=None):
         """Create and return a user with password 'pass'."""
         return User.objects.create_user(
             username=email,
             email=email,
             password='pass',
             is_verified=is_verified,
-            otp=otp
+            otp=otp,
+            otp_expires_at=otp_expires_at
         )
 
     def register(self, **overrides):
@@ -282,11 +284,38 @@ class AuthenticationEndpointTest(TestCase):
         user.refresh_from_db()
         self.assertTrue(user.is_verified)
         self.assertIsNone(user.otp)
-
         # Second activation attempt with the same OTP
         response = self.client.get(f'/api/activate/{uidb64}/{token}/')
         self.assertEqual(response.status_code, 400)
         self.assertIn('token', response.data)
+
+    def test_registration_with_valid_otp_expiration_time(self):
+        """Reject activation attempts with expired OTPs."""
+        user = self.create_user(
+            'user@example.com', 
+            is_verified=False, 
+            otp='123456', 
+            otp_expires_at=timezone.now() - timedelta(hours=1)
+            )
+        uidb64 = encode_user_id(user.pk)
+        token = '123456'
+        response = self.client.get(f'/api/activate/{uidb64}/{token}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('message', response.data)
+
+    def test_registration_with_expired_otp(self):
+        """Reject activation attempts with expired OTPs."""
+        user = self.create_user(
+            'user@example.com', 
+            is_verified=False, 
+            otp='123456', 
+            otp_expires_at=timezone.now() - timedelta(hours=-1)
+        )
+        uidb64 = encode_user_id(user.pk)
+        token = '123456'
+        response = self.client.get(f'/api/activate/{uidb64}/{token}/')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('message', response.data)
 
     def test_login_requires_exact_email_case(self):
         """Login succeeds with exact username case and fails otherwise."""
