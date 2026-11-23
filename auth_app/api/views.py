@@ -198,6 +198,8 @@ class CookieTokenObtainPairView(TokenObtainPairView):
         serializer = self.get_valid_login_serializer(request.data)
 
         user = serializer.user
+        if not user.is_verified:
+            raise AuthenticationFailed("Invalid login data.")
         response = Response(
             {
                 'detail': 'Login successfully!',

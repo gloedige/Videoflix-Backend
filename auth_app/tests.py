@@ -319,7 +319,7 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_login_requires_exact_email_case(self):
         """Login succeeds with exact username case and fails otherwise."""
-        user = self.create_user('login@example.com', is_verified=False, otp='123456')
+        user = self.create_user('login@example.com', is_verified=True, otp='123456')
 
         response = self.login('login@example.com', 'pass')
 
@@ -331,7 +331,7 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_login_returns_same_generic_validation_error_for_invalid_credentials(self):
         """Unknown users and wrong passwords yield the same generic error."""
-        self.create_user('known@example.com', is_verified=False, otp='123456')
+        self.create_user('known@example.com', is_verified=True, otp='123456')
 
         for email, password in (
             ('missing-user@example.com', 'pass'),
@@ -348,7 +348,7 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_cookies_are_set_on_login(self):
         """Cookies are correctly set after a successful login."""
-        self.create_user('cookie@example.com', is_verified=False, otp='123456')
+        self.create_user('cookie@example.com', is_verified=True, otp='123456')
         response = self.login('cookie@example.com', 'pass')
 
         self.assertEqual(response.status_code, 200)
@@ -356,13 +356,22 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_login_cookies_has_httponly_flag(self):
         """Login cookies should have the HttpOnly flag set."""
-        self.create_user('cookie@example.com', is_verified=False, otp='123456')
+        self.create_user('cookie@example.com', is_verified=True, otp='123456')
         response = self.login('cookie@example.com', 'pass')
         self.assertEqual(response.status_code, 200)
         self.assertIn('access_token', response.cookies)
         self.assertIn('refresh_token', response.cookies)
         self.assertTrue(response.cookies['access_token']['httponly'])
         self.assertTrue(response.cookies['refresh_token']['httponly'])
+
+    def test_login_rejects_unverified_user(self):
+        """Login should fail for users who are not verified."""
+        self.create_user(
+            'unverified@example.com', 
+            is_verified=False, 
+            otp='123456')
+        response = self.login('unverified@example.com', 'pass')
+        self.assertEqual(response.status_code, 401)
 
     def test_logout_without_login(self):
         """Logging out without being logged in should fail."""
@@ -371,7 +380,7 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_logout_with_login(self):
         """Logging out after being logged in should succeed."""
-        self.create_user('logout@example.com', is_verified=False, otp='123456')
+        self.create_user('logout@example.com', is_verified=True, otp='123456')
         login_response = self.login('logout@example.com', 'pass')
         refresh_token = login_response.cookies['refresh_token'].value
         access_token = login_response.cookies['access_token'].value
@@ -387,7 +396,7 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_logout_validates_access_cookie_even_with_authorization_header(self):
         """A valid bearer token must not mask a malformed access cookie at logout."""
-        self.create_user('logout-header@example.com', is_verified=False, otp='123456')
+        self.create_user('logout-header@example.com', is_verified=True, otp='123456')
         login_response = self.login('logout-header@example.com', 'pass')
         access_token = login_response.cookies['access_token'].value
         self.client.cookies['access_token'] = 'malformed.jwt.cookie'
