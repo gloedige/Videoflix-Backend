@@ -33,9 +33,9 @@ SECRET_KEY = os.getenv('SECRET_KEY', default='django-insecure-9-%nau^us%9uovl&(z
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', default='localhost').split(',')
-CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', default='http://localhost:4200').split(',')
+CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', default='http://localhost:5500').split(',')
 
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', default='http://localhost:4200').split(',')
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', default='http://localhost:5500').split(',')
 CORS_ALLOW_CREDENTIALS = True
 
 INSTALLED_APPS = [
