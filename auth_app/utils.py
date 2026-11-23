@@ -23,11 +23,11 @@ def generate_otp(length=6):
     otp = ''.join(random.SystemRandom().choice(otp_chars) for _ in range(length))
     return otp
 
-def check_otp_expiration(otp_expires_at):
+def check_otp_not_expired(otp_expires_at):
     '''Check if the OTP has expired.'''
     if otp_expires_at is None:
         return True
-    return timezone.now() > otp_expires_at
+    return timezone.now() < otp_expires_at
 
 def get_otp_expiration_time():
     '''Get the expiration time for the OTP based on the current time and the configured expiration duration.'''

@@ -18,7 +18,7 @@ from auth_app.api.authentication import CookieJWTAuthentication
 from auth_app.api.throttling import VerifyOTPThrottle
 from auth_app.email import send_activation_email, send_password_reset_email
 from auth_app.models import CustomUser
-from auth_app.utils import check_otp_expiration, generate_otp, get_otp_expiration_time
+from auth_app.utils import check_otp_not_expired, generate_otp, get_otp_expiration_time
 from core.settings import (
     AUTH_COOKIE_SECURE,
     CUSTOM_ACCESS_COOKIE_LIFETIME,
@@ -119,7 +119,7 @@ class VerifyOTPView(APIView):
 
     def check_and_activate_user(self, user):
         '''Check if the OTP is still valid and activate the user if it is.'''
-        if check_otp_expiration(user.otp_expires_at):    
+        if check_otp_not_expired(user.otp_expires_at):    
             user.is_verified = True
             user.otp = None
             user.otp_expires_at = None
@@ -397,7 +397,7 @@ class PasswordResetConfirmView(APIView):
         )
     
     def check_user_and_set_password(self, user, request):
-        if check_otp_expiration(user.otp_expires_at):
+        if check_otp_not_expired(user.otp_expires_at):
             user.set_password(request.data.get('new_password'))
             user.otp = None
             user.otp_expires_at = None
