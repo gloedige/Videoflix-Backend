@@ -39,6 +39,7 @@ PUBLIC_PERMISSIONS = (AllowAny,)
 AUTHENTICATED_PERMISSIONS = (IsAuthenticated,)
 
 def set_auth_cookies(response, access_token, new_refresh_token):
+    '''Set authentication cookies for access and refresh tokens.'''
     if access_token:
         response.set_cookie(
             key='access_token',
@@ -63,6 +64,7 @@ def set_auth_cookies(response, access_token, new_refresh_token):
     return response
 
 def delete_session_cookies(response):
+    '''Delete authentication cookies for access and refresh tokens.'''
     response.delete_cookie('access_token', path='/')
     response.delete_cookie('refresh_token', path='/')
     return response
@@ -358,7 +360,7 @@ class PasswordResetConfirmView(APIView):
     serializer_class = PasswordResetConfirmSerializer
 
     def post(self, request, **kwargs):
-
+        '''Handle password reset confirmation request.'''
         serializer = self.serializer_class(data={
             'uidb64': kwargs.get('uidb64'),
             'token': kwargs.get('token'),
