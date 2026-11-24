@@ -110,7 +110,7 @@ class VerifyOTPSerializer(serializers.Serializer):
         try:
             decoded_user_id = decode_uidb64(value)
             return int(decoded_user_id)
-        except (TypeError, ValueError, OverflowError):
+        except (TypeError, ValueError, OverflowError, UnicodeDecodeError):
             raise serializers.ValidationError({"uidb64": "Invalid UID"})
 
     def validate(self, attrs):
