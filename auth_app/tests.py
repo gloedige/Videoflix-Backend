@@ -27,7 +27,7 @@ class AuthenticationEndpointTest(TestCase):
         return User.objects.create_user(
             username=email,
             email=email,
-            password='pass',
+            password='sUp3rS3cr3t',
             is_verified=is_verified,
             otp=otp,
             otp_expires_at=otp_expires_at
@@ -37,8 +37,8 @@ class AuthenticationEndpointTest(TestCase):
         """POST a valid registration payload updated by overrides; return the response."""
         payload = {
             'email': 'valid@example.com',
-            'password': 'pass',
-            'confirmed_password': 'pass',
+            'password': 'sUp3rS3cr3t',
+            'confirmed_password': 'sUp3rS3cr3t',
         }
         payload.update(overrides)
         return self.client.post('/api/register/', payload, format='json')
@@ -116,15 +116,18 @@ class AuthenticationEndpointTest(TestCase):
         user.is_active = False
         user.save()
 
-    def test_registration_allows_username_with_different_case(self):
-        """A username differing only in case can still register."""
-        self.create_user('existing@example.com')
-
-        response = self.register(
-            email='new@example.com'
+    def test_registration_denys_email_with_different_case(self):
+        """An email differing only in writingcase can still register."""
+        self.create_user(
+            email='existing@example.com',
+            is_verified=True,
         )
 
-        self.assertEqual(response.status_code, 201)
+        response = self.register(
+            email='EXISTING@example.com',
+        )
+
+        self.assertEqual(response.status_code, 400)
         self.assertTrue(User.objects.filter(email='existing@example.com').exists())
 
 
@@ -149,7 +152,7 @@ class AuthenticationEndpointTest(TestCase):
     def test_registration_rejects_mismatched_password(self):
         """Reject mismatched passwords with an error on confirmed_password."""
         self.assert_password_rejected(
-            'mismatch@example.com', 'pass', 'different', 'confirmed_password'
+            'mismatch@example.com', 'sUp3rS3cr3t', 'different', 'confirmed_password'
         )
 
     def test_registration_normalizes_email_and_uses_it_as_username(self):
@@ -160,8 +163,8 @@ class AuthenticationEndpointTest(TestCase):
         ):
             response = self.register(
                 email='  New-User@Example.COM  ',
-                password='pass',
-                confirmed_password='pass',
+                password='sUp3rS3cr3t',
+                confirmed_password='sUp3rS3cr3t',
             )
 
         self.assertEqual(response.status_code, 201)
@@ -172,8 +175,8 @@ class AuthenticationEndpointTest(TestCase):
         })
         self.assertEqual(response.data['token'], '123456')
         self.assertEqual(user.username, user.email)
-        self.assertTrue(user.check_password('pass'))
-        self.assertNotEqual(user.password, 'pass')
+        self.assertTrue(user.check_password('sUp3rS3cr3t'))
+        self.assertNotEqual(user.password, 'sUp3rS3cr3t')
         self.assertFalse(user.is_verified)
         send_activation_email.assert_called_once_with(user.email, user.pk, '123456')
 
@@ -280,7 +283,12 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_registration_second_activation_attempt(self):
         """Reject a second activation attempt with the same OTP."""
-        user = self.create_user('user@example.com', is_verified=False, otp='123456')
+        user = self.create_user(
+            'user@example.com', 
+            is_verified=False, 
+            otp='123456',
+            otp_expires_at=timezone.now() + timedelta(minutes=10)
+            )
         uidb64 = encode_user_id(user.pk)
         token = '123456'
         # First activation attempt
@@ -326,13 +334,13 @@ class AuthenticationEndpointTest(TestCase):
         """Login succeeds with exact username case and fails otherwise."""
         user = self.create_user('login@example.com', is_verified=True, otp='123456')
 
-        response = self.login('login@example.com', 'pass')
+        response = self.login('login@example.com', 'sUp3rS3cr3t')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['detail'], 'Login successfully!')
         self.assertEqual(response.data['user']['id'], user.pk)
         self.assertEqual(response.data['user']['username'], 'login@example.com')
-        self.assert_generic_login_error(self.login('LOGIN@EXAMPLE.COM', 'pass'))
+        self.assert_generic_login_error(self.login('LOGIN@EXAMPLE.COM', 'sUp3rS3cr3t'))
 
     def test_login_returns_same_generic_validation_error_for_invalid_credentials(self):
         """Unknown users and wrong passwords yield the same generic error."""
@@ -354,7 +362,7 @@ class AuthenticationEndpointTest(TestCase):
     def test_cookies_are_set_on_login(self):
         """Cookies are correctly set after a successful login."""
         self.create_user('cookie@example.com', is_verified=True, otp='123456')
-        response = self.login('cookie@example.com', 'pass')
+        response = self.login('cookie@example.com', 'sUp3rS3cr3t')
 
         self.assertEqual(response.status_code, 200)
         self.validate_token_cookies(response)
@@ -362,7 +370,7 @@ class AuthenticationEndpointTest(TestCase):
     def test_login_cookies_has_httponly_flag(self):
         """Login cookies should have the HttpOnly flag set."""
         self.create_user('cookie@example.com', is_verified=True, otp='123456')
-        response = self.login('cookie@example.com', 'pass')
+        response = self.login('cookie@example.com', 'sUp3rS3cr3t')
         self.assertEqual(response.status_code, 200)
         self.assertIn('access_token', response.cookies)
         self.assertIn('refresh_token', response.cookies)
@@ -375,7 +383,7 @@ class AuthenticationEndpointTest(TestCase):
             'unverified@example.com', 
             is_verified=False, 
             otp='123456')
-        response = self.login('unverified@example.com', 'pass')
+        response = self.login('unverified@example.com', 'sUp3rS3cr3t')
         self.assertEqual(response.status_code, 401)
 
     def test_logout_without_login(self):
@@ -386,7 +394,7 @@ class AuthenticationEndpointTest(TestCase):
     def test_logout_with_login(self):
         """Logging out after being logged in should succeed."""
         self.create_user('logout@example.com', is_verified=True, otp='123456')
-        login_response = self.login('logout@example.com', 'pass')
+        login_response = self.login('logout@example.com', 'sUp3rS3cr3t')
         refresh_token = login_response.cookies['refresh_token'].value
         access_token = login_response.cookies['access_token'].value
 
@@ -402,7 +410,7 @@ class AuthenticationEndpointTest(TestCase):
     def test_logout_validates_access_cookie_even_with_authorization_header(self):
         """A valid bearer token must not mask a malformed access cookie at logout."""
         self.create_user('logout-header@example.com', is_verified=True, otp='123456')
-        login_response = self.login('logout-header@example.com', 'pass')
+        login_response = self.login('logout-header@example.com', 'sUp3rS3cr3t')
         access_token = login_response.cookies['access_token'].value
         self.client.cookies['access_token'] = 'malformed.jwt.cookie'
         response = self.client.post('/api/logout/', HTTP_AUTHORIZATION=f'Bearer {access_token}')
@@ -424,7 +432,7 @@ class AuthenticationEndpointTest(TestCase):
     def test_refresh_with_valid_refresh_token(self):
         """Refreshing with a valid refresh token should succeed."""
         self.create_user('refresh@example.com', is_verified=True, otp='123456')
-        login_response = self.login('refresh@example.com', 'pass')
+        login_response = self.login('refresh@example.com', 'sUp3rS3cr3t')
         refresh_token = login_response.cookies['refresh_token'].value
         self.client.cookies['refresh_token'] = refresh_token
         response = self.client.post('/api/token/refresh/', {}, format='json')
@@ -436,7 +444,7 @@ class AuthenticationEndpointTest(TestCase):
     def test_refresh_with_inactive_user_in_token(self):
         """Refreshing with a refresh token for an inactive user should fail."""
         self.create_user('active@example.com', is_verified=True, otp='123456')
-        self.login('active@example.com', 'pass')
+        self.login('active@example.com', 'sUp3rS3cr3t')
         self.setUserInactive('active@example.com')
         response = self.client.post('/api/token/refresh/', {}, format='json')
         self.assertEqual(response.status_code, 401)
@@ -445,7 +453,7 @@ class AuthenticationEndpointTest(TestCase):
     def test_refresh_with_rotated_refresh_token(self):
         """Refreshing should rotate the refresh token and blacklist the old one."""
         self.create_user('rotate@example.com', is_verified=True, otp='123456')
-        login_response = self.login('rotate@example.com', 'pass')
+        login_response = self.login('rotate@example.com', 'sUp3rS3cr3t')
         old_refresh_token = login_response.cookies['refresh_token'].value
         self.client.cookies['refresh_token'] = old_refresh_token
         response = self.client.post('/api/token/refresh/', {}, format='json')
@@ -456,8 +464,13 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_refresh_token_sets_new_access_token(self):
         """Refreshing the token sets a new access token cookie."""
-        self.create_user('refresh@example.com', is_verified=True, otp='123456')
-        self.login('refresh@example.com', 'pass')
+        self.create_user(
+            'refresh@example.com', 
+            is_verified=True, 
+            otp='123456',
+            otp_expires_at=timezone.now() + timedelta(minutes=10)
+        )
+        self.login('refresh@example.com', 'sUp3rS3cr3t')
         response = self.client.post('/api/token/refresh/', format='json')
 
         self.assertEqual(response.status_code, 200)
@@ -465,8 +478,13 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_refresh_token_with_invalid_token(self):
         """Refreshing the token with an invalid token should fail."""
-        self.create_user('invalid-refresh@example.com', is_verified=True, otp='123456')
-        self.login('invalid-refresh@example.com', 'pass')
+        self.create_user(
+            'invalid-refresh@example.com', 
+            is_verified=True, 
+            otp='123456',
+            otp_expires_at=timezone.now() + timedelta(minutes=10)
+        )
+        self.login('invalid-refresh@example.com', 'sUp3rS3cr3t')
         # Manually clear the refresh token cookie to simulate an invalid token
         self.client.cookies['access_token'] = 'invalid.jwt.value'
         self.client.cookies['refresh_token'] = 'invalid.jwt.value'
@@ -511,14 +529,19 @@ class AuthenticationEndpointTest(TestCase):
 
     def test_reset_password_confirm_valid(self):
         """Confirming password reset with valid data should succeed."""
-        user = self.create_user('reset@example.com', is_verified=True, otp='123456')
+        user = self.create_user(
+            'reset@example.com', 
+            is_verified=True, 
+            otp='123456',
+            otp_expires_at=timezone.now() + timedelta(minutes=10)
+        )
         uidb64 = encode_user_id(user.id)
         token = '123456'
         response = self.client.post(
             f'/api/password_confirm/{uidb64}/{token}/',
             {
-                'new_password': 'newpass',
-                'confirm_password': 'newpass'
+                'new_password': 'sUp3rS3cr3t',
+                'confirm_password': 'sUp3rS3cr3t'
             },
             format='json'
         )
@@ -533,8 +556,8 @@ class AuthenticationEndpointTest(TestCase):
         response = self.client.post(
             f'/api/password_confirm/{uidb64}/{token}/',
             {
-                'new_password': 'newpass',
-                'confirm_password': 'newpass'
+                'new_password': 'sUp3rS3cr3t',
+                'confirm_password': 'sUp3rS3cr3t'
             },
             format='json'
         )
@@ -548,8 +571,8 @@ class AuthenticationEndpointTest(TestCase):
         response = self.client.post(
             f'/api/password_confirm/{uidb64}/{token}/',
             {
-                'new_password': 'newpass',
-                'confirm_password': 'newpass'
+                'new_password': 'sUp3rS3cr3t',
+                'confirm_password': 'sUp3rS3cr3t'
             },
             format='json'
         )
@@ -564,13 +587,13 @@ class AuthenticationEndpointTest(TestCase):
         response = self.client.post(
             f'/api/password_confirm/{uidb64}/{token}/',
             {
-                'new_password': 'newpass',
+                'new_password': 'sUp3rS3cr3t',
                 'confirm_password': 'differentpass'
             },
             format='json'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn('detail', response.data)
+        self.assertIn('confirm_password', response.data)
 
     def test_reset_password_confirm_expired_otp(self):
         """Confirming password reset with an expired OTP should fail."""
@@ -584,13 +607,13 @@ class AuthenticationEndpointTest(TestCase):
         response = self.client.post(
             f'/api/password_confirm/{uidb64}/{token}/',
             {
-                'new_password': 'newpass',
-                'confirm_password': 'newpass'
+                'new_password': 'sUp3rS3cr3t',
+                'confirm_password': 'sUp3rS3cr3t'
             },
             format='json'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn('detail', response.data)
+        self.assertIn('token', response.data)
 
     def test_reset_password_confirm_not_expired_otp(self):
         """Confirming password reset with a valid OTP should succeed."""
@@ -604,8 +627,8 @@ class AuthenticationEndpointTest(TestCase):
         response = self.client.post(
             f'/api/password_confirm/{uidb64}/{token}/',
             {
-                'new_password': 'newpass',
-                'confirm_password': 'newpass'
+                'new_password': 'sUp3rS3cr3t',
+                'confirm_password': 'sUp3rS3cr3t'
             },
             format='json'
         )
