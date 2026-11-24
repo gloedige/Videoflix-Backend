@@ -208,10 +208,15 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     def create(self, attrs):
         """Set the new password and consume the one-time reset token."""
         with transaction.atomic():
-            user = CustomUser.objects.select_for_update().get(
-                pk=attrs["user"].pk,
-                otp=attrs.get('token')
-            )
+            try:
+                user = CustomUser.objects.select_for_update().get(
+                    pk=attrs["user"].pk,
+                    otp=attrs["token"],
+                )
+            except CustomUser.DoesNotExist as exc:
+                raise serializers.ValidationError(
+                    {"token": "OTP is invalid or has already been used"}
+                ) from exc
 
             if not check_otp_not_expired(user.otp_expires_at):
                 raise serializers.ValidationError({"token": "OTP is invalid or expired"})
