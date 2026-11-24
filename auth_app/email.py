@@ -24,7 +24,8 @@ def send_activation_email(target_email, user_id, otp):
     html_content = _get_html_content(activation_link, username, 'activate')
   
     _send_email(subject, message_content, html_content, to)
-    logger.info(f"ACTIVATION LINK {activation_link} for {target_email}")  # TODO: only for development
+    if settings.DEBUG:
+        logger.info(f"ACTIVATION LINK {activation_link} for {target_email}")
 
 def generate_activation_email_body(activation_link, username):
     return (f'Hello {username},'
@@ -45,7 +46,8 @@ def send_password_reset_email(target_email, user_id, otp):
     html_content = _get_html_content(reset_link, username, 'reset')
 
     _send_email(subject, message_content, html_content, to)
-    logger.warning(f"PASSWORD RESET LINK {reset_link} for {target_email}") # TODO: only for development
+    if settings.DEBUG:
+        logger.info(f"PASSWORD RESET LINK {reset_link} for {target_email}")
 
 def generate_password_reset_message(reset_link, username):
     '''Generate the plain text message for password reset.'''
