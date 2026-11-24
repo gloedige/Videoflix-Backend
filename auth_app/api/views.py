@@ -27,10 +27,10 @@ from core.settings import (
 
 from .serializers import (
     LoginSerializer,
+    PasswordResetConfirmSerializer,
     PasswordResetSerializer,
     RegistrationSerializer,
     VerifyOTPSerializer,
-    PasswordResetConfirmSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -139,6 +139,7 @@ class RegistrationView(APIView):
         serializer = self.serializer_class(data=request.data)
 
         if not serializer.is_valid():
+            logger.error("Registration failed due to invalid data: %s", serializer.errors)
             return Response(
                 serializer.errors, 
                 status=status.HTTP_400_BAD_REQUEST
