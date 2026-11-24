@@ -95,41 +95,44 @@ class VerifyOTPView(APIView):
     def activate_user(self, serializer):
         '''Activate the user based on the validated serializer data.'''
         try:
-            user = fetch_user(serializer)
-        except CustomUser.DoesNotExist as e:
-            logger.error("Failed to get user: %s", e)
+            self.check_and_activate_user(serializer)
+        except CustomUser.DoesNotExist:
+            logger.error("Failed to get user.")
             return Response(
                 {'message': 'Activation failed.'}, 
                 status=status.HTTP_400_BAD_REQUEST
                 )
-
-        try:
-            self.check_and_activate_user(user)
-        except ValidationError as e:
-            logger.error("Failed to activate user: %s", e)
+        except ValidationError:
+            logger.error("Failed to activate user.")
             return Response(
                 {'message': 'Activation failed.'}, 
                 status=status.HTTP_400_BAD_REQUEST
                 )
-
         return Response(
             {'message': 'Account successfully activated.'}, 
             status=status.HTTP_200_OK
             )
         
 
-    def check_and_activate_user(self, user):
-        '''Check if the OTP is still valid and activate the user if it is.'''
+    def check_and_activate_user(self, serializer):
+        '''Check if the OTP is valid and activate the user if it is.'''
 
         with transaction.atomic():
-            if check_otp_not_expired(user.otp_expires_at):    
-                user.is_verified = True
-                user.otp = None
-                user.otp_expires_at = None
-                user.save(update_fields=['is_verified', 'otp', 'otp_expires_at'])
-            else:
-                raise ValidationError("OTP has expired.")
+            user = CustomUser.objects.select_for_update().get(
+                pk=serializer.validated_data.get('uidb64'),
+                otp=serializer.validated_data.get('token')
+                )
 
+            if not check_otp_not_expired(user.otp_expires_at):    
+                raise ValidationError("OTP has expired.")
+            
+            user.is_verified = True
+            user.otp = None
+            user.otp_expires_at = None
+            user.save(update_fields=['is_verified', 'otp', 'otp_expires_at'])
+
+
+            
 class RegistrationView(APIView):
     ''' API view for user registration. '''
     permission_classes = PUBLIC_PERMISSIONS
