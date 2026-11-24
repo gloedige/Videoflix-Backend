@@ -99,13 +99,11 @@ class VerifyOTPView(APIView):
         try:
             self.check_and_activate_user(serializer)
         except CustomUser.DoesNotExist:
-            logger.error("Failed to get user.")
             return Response(
                 {'message': 'Activation failed.'}, 
                 status=status.HTTP_400_BAD_REQUEST
                 )
         except ValidationError:
-            logger.error("Failed to activate user.")
             return Response(
                 {'message': 'Activation failed.'}, 
                 status=status.HTTP_400_BAD_REQUEST
@@ -114,7 +112,6 @@ class VerifyOTPView(APIView):
             {'message': 'Account successfully activated.'}, 
             status=status.HTTP_200_OK
             )
-        
 
     def check_and_activate_user(self, serializer):
         '''Check if the OTP is valid and activate the user if it is.'''
@@ -210,6 +207,12 @@ class CookieTokenObtainPairView(TokenObtainPairView):
         if not user.is_verified:
             logger.error("User not verified: %s", user.email)
             raise AuthenticationFailed("Invalid login data.")
+        response = self.send_login_response(user)
+        data = serializer.validated_data
+        return set_auth_cookies(response, data['access'], data['refresh'])
+
+    def send_login_response(self, user):
+        '''Send a response indicating successful login for the given user.'''
         response = Response(
             {
                 'detail': 'Login successfully!',
@@ -220,8 +223,7 @@ class CookieTokenObtainPairView(TokenObtainPairView):
             },
             status=status.HTTP_200_OK,
         )
-        data = serializer.validated_data
-        return set_auth_cookies(response, data['access'], data['refresh'])
+        return response
 
 class CookieRefreshView(TokenRefreshView):
     '''API view for refreshing JWT tokens using HttpOnly cookies.'''
@@ -315,10 +317,15 @@ class CookieLogoutView(APIView):
         self.blacklist_refresh_cookie(request.COOKIES.get('refresh_token'))
         CookieJWTAuthentication().store_access_token_in_custom_storage(access_token)
         CookieJWTAuthentication().clear_deprecated_access_token()
+        response = self.create_logout_response()
+        delete_session_cookies(response)
+        return response
+
+    def create_logout_response(self):
+        '''Create a response indicating successful logout.'''
         response = Response(
             {"detail": "Log-Out successfully! All Tokens will be deleted. Refresh token is now invalid."}, 
             status=status.HTTP_200_OK)
-        delete_session_cookies(response)
         return response
 
 
@@ -350,12 +357,7 @@ class PasswordResetView(APIView):
     def handle_password_reset(self, serializer):
         '''Handle the actual password reset logic.'''
         email = serializer.validated_data.get('email')
-        
-
-        try: 
-            user = CustomUser.objects.get(email=email)
-        except CustomUser.DoesNotExist:
-            user = None
+        user = self.get_user_by_email(email)
         
         if user is not None:
             try:
@@ -367,10 +369,22 @@ class PasswordResetView(APIView):
             except IntegrityError:
                 logger.exception("Error during password reset")
 
+        return self.send_password_reset_confirmation()
+
+    def send_password_reset_confirmation(self):
+        '''Send a response confirming that the password reset email has been sent.'''
         return Response(
             {"detail": "An email has been sent to reset your password."},
             status=status.HTTP_200_OK
         )
+
+    def get_user_by_email(self, email):
+        '''Retrieve a user by their email address, returning None if not found.'''
+        try: 
+            user = CustomUser.objects.get(email=email)
+        except CustomUser.DoesNotExist:
+            user = None
+        return user
     
 class PasswordResetConfirmView(APIView):
     '''API view for handling password reset confirmation.'''
@@ -380,18 +394,26 @@ class PasswordResetConfirmView(APIView):
 
     def post(self, request, **kwargs):
         '''Handle password reset confirmation request.'''
-        serializer = self.serializer_class(data={
-            'uidb64': kwargs.get('uidb64'),
-            'token': kwargs.get('token'),
-            'new_password': request.data.get('new_password'),
-            'confirm_password': request.data.get('confirm_password')
-        })
+        serializer = self.create_password_reset_serializer(request, kwargs)
 
         if not serializer.is_valid():
             logger.error("Password reset confirmation failed: invalid data")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         serializer.save()
+        return self.send_password_reset_success_response()
+
+    def create_password_reset_serializer(self, request, kwargs):
+        '''Create and return a password reset confirmation serializer instance.'''
+        return self.serializer_class(data={
+            'uidb64': kwargs.get('uidb64'),
+            'token': kwargs.get('token'),
+            'new_password': request.data.get('new_password'),
+            'confirm_password': request.data.get('confirm_password')
+        })
+
+    def send_password_reset_success_response(self):
+        '''Send a response confirming that the password has been successfully reset.'''
         return Response(
             {"detail": "Your Password has been successfully reset."},
             status=status.HTTP_200_OK
