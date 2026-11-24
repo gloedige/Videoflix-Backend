@@ -4,6 +4,7 @@ from typing import ClassVar
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -179,39 +180,66 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         """Ensure the new passwords match."""
+        self.validate_passwords_match(attrs)
+        user = self.get_authenticated_user(attrs)
+        self.validate_user_password(attrs, user)
+
+        attrs["user"] = user
+        return attrs
+
+    def validate_passwords_match(self, attrs):
+        """Check if the new password and confirm password match."""
         if attrs["new_password"] != attrs["confirm_password"]:
             raise serializers.ValidationError(
                 {"confirm_password": "Passwords do not match"}
             )
 
-        try:
-            user = self.fetch_user(attrs)
-        except CustomUser.DoesNotExist as exc:
-            raise serializers.ValidationError({"token": "Invalid OTP"}) from exc
-
-        if user.otp_expires_at is None or not check_otp_not_expired(user.otp_expires_at):
-            raise serializers.ValidationError({"token": "OTP is invalid or expired"})
-
+    def validate_user_password(self, attrs, user):
+        """Validate the new password against Django's password validators."""
         try:
             validate_password(attrs["new_password"], user=user)
         except DjangoValidationError as exc:
             raise serializers.ValidationError({"new_password": exc.messages}) from exc
 
-        attrs["user"] = user
-        return attrs
+    def get_authenticated_user(self, attrs):
+        """Retrieve the user based on the UID and OTP token, raising an error if not found."""
+        try:
+            user = self.fetch_user(attrs)
+        except CustomUser.DoesNotExist as exc:
+            raise serializers.ValidationError({"token": "Invalid OTP"}) from exc
+        return user
 
-    def fetch_user(self, validated_data):
-        '''Fetch the user based on the UID and OTP token from the serializer.'''
+    def fetch_user(self, data):
+        """Fetch the user based on the UID and OTP token from the serializer."""
         return CustomUser.objects.get(
-                pk=validated_data['uidb64'],
-                otp=validated_data.get('token')
-                )
+            pk=data['uidb64'],
+            otp=data.get('token')
+        )
     
-    def create(self, validated_data):
-        """Set the new password and consume the one-time reset token."""
-        user = validated_data["user"]
-        user.set_password(validated_data["new_password"])
-        user.otp = None
-        user.otp_expires_at = None
-        user.save(update_fields=["password", "otp", "otp_expires_at"])
+    def create(self, attrs):
+        """Set the new password and consume the one-time reset token for the user."""
+        with transaction.atomic():
+            user = self.fetch_user_by_token_and_pk(attrs)
+
+            if not check_otp_not_expired(user.otp_expires_at):
+                raise serializers.ValidationError({"token": "OTP is invalid or expired"})
+            
+            user.set_password(attrs["new_password"])
+            user.otp = None
+            user.otp_expires_at = None
+            user.save(update_fields=["password", "otp", "otp_expires_at"])
+        return user
+
+    def fetch_user_by_token_and_pk(self, attrs):
+        """Fetch the user for password reset using the OTP token, ensuring the record is locked for update."""
+        try:
+            user = CustomUser.objects.select_for_update().get(
+                    pk=attrs["user"].pk,
+                    otp=attrs["token"],
+                )
+        except CustomUser.DoesNotExist as exc:
+            raise serializers.ValidationError(
+                    {"token": "OTP is invalid or has already been used"}
+                ) from exc
+            
         return user
