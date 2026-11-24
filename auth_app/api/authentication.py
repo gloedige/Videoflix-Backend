@@ -8,6 +8,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 # Local imports
 from auth_app.models import AccessTokenStorage
 
+
 class CookieJWTAuthentication(JWTAuthentication):
     """
     Custom JWT authentication class that retrieves the access token from HttpOnly cookies if not present in the header.
