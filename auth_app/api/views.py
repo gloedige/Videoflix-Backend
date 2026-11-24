@@ -201,6 +201,7 @@ class CookieTokenObtainPairView(TokenObtainPairView):
 
         user = serializer.user
         if not user.is_verified:
+            logger.error("User not verified: %s", user.email)
             raise AuthenticationFailed("Invalid login data.")
         response = Response(
             {
@@ -361,6 +362,7 @@ class PasswordResetConfirmView(APIView):
         })
 
         if not serializer.is_valid():
+            logger.error("Password reset confirmation failed: invalid data")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         serializer.save()
@@ -368,68 +370,3 @@ class PasswordResetConfirmView(APIView):
             {"detail": "Password has been reset successfully."},
             status=status.HTTP_200_OK
         )
-
-    # def post(self, request, **kwargs):
-    #     '''Handle password reset confirmation.'''
-    #     serializer = self.serializer_class(data=kwargs)
-
-    #     if not serializer.is_valid():
-    #         return Response(
-    #             serializer.errors, 
-    #             status=status.HTTP_400_BAD_REQUEST
-    #             )
-        
-    #     if not self.check_passwords_match(request):
-    #         logger.error("Password reset failed: passwords do not match")
-    #         return Response(
-    #             {"detail": "Passwords do not match."},
-    #             status=status.HTTP_400_BAD_REQUEST
-    #         )
-
-    #     return self.reset_password(request, serializer)
-
-    # def check_passwords_match(self, request):
-    #     '''Validate that the new password and confirmed password match.'''
-    #     new_password = request.data.get('new_password')
-    #     confirm_password = request.data.get('confirm_password')
-    #     return bool(new_password and confirm_password and new_password == confirm_password)
-    
-    
-    
-    # def reset_password(self, request, serializer):
-    #     '''Reset the user's password using the provided serializer.'''
-    #     try:
-    #         user = fetch_user(serializer)
-    #     except CustomUser.DoesNotExist:
-    #         logger.exception("User not found during password reset confirmation")
-    #         return self.handle_user_not_found()
-
-    #     try:
-    #         self.check_user_and_set_password(user, request)
-    #     except ValidationError:
-    #         logger.exception("OTP has expired during password reset confirmation")
-    #         return Response(
-    #             {"detail": "OTP has expired."},
-    #             status=status.HTTP_400_BAD_REQUEST
-    #         )
-        
-    #     return Response(
-    #         {"detail": "Password has been reset successfully."},
-    #         status=status.HTTP_200_OK
-    #     )
-    
-    # def check_user_and_set_password(self, user, request):
-    #     if check_otp_not_expired(user.otp_expires_at):
-    #         user.set_password(request.data.get('new_password'))
-    #         user.otp = None
-    #         user.otp_expires_at = None
-    #         user.save(update_fields=['password', 'otp', 'otp_expires_at'])
-    #     else:
-    #         raise ValidationError("OTP has expired.")
-    
-    # def handle_user_not_found(self):
-    #     '''Handle the case when the user is not found.'''
-    #     return Response(
-    #         {"detail": "Custom user not found."},
-    #         status=status.HTTP_400_BAD_REQUEST,
-    #     )

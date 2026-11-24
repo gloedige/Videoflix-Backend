@@ -634,3 +634,45 @@ class AuthenticationEndpointTest(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn('detail', response.data)
+
+    def test_reset_password_new_password_success(self):
+        """Setting a new password after confirming should succeed."""
+        user = self.create_user(
+            'newpass@example.com', 
+            is_verified=True, 
+            otp='123456', 
+            otp_expires_at=timezone.now() + timedelta(hours=1))
+        uidb64 = encode_user_id(user.id)
+        token = '123456'
+        self.client.post(
+            f'/api/password_confirm/{uidb64}/{token}/',
+            {
+                'new_password': 'NewSUp3rS3cr3t',
+                'confirm_password': 'NewSUp3rS3cr3t'
+            },
+            format='json'
+        )
+        response = self.login('newpass@example.com', 'NewSUp3rS3cr3t')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('detail', response.data)
+
+    def test_reset_password_old_password_failure(self):
+        """Logging in with the old password after resetting should fail."""
+        user = self.create_user(
+            'oldpass@example.com', 
+            is_verified=True, 
+            otp='123456', 
+            otp_expires_at=timezone.now() + timedelta(hours=1))
+        uidb64 = encode_user_id(user.id)
+        token = '123456'
+        self.client.post(
+            f'/api/password_confirm/{uidb64}/{token}/',
+            {
+                'new_password': 'NewSUp3rS3cr3t',
+                'confirm_password': 'NewSUp3rS3cr3t'
+            },
+            format='json'
+        )
+        response = self.login('oldpass@example.com', 'sUp3rS3cr3t')
+        self.assertEqual(response.status_code, 401)
+        self.assertIn('detail', response.data)
