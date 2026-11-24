@@ -202,7 +202,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '1000/day',
         'user': '1000/day',
-        'verify_otp': '200/min',
+        'verify_otp': '1000/day',
     }
 }
 
