@@ -416,6 +416,14 @@ class AuthenticationEndpointTest(TestCase):
         response = self.client.post('/api/logout/', HTTP_AUTHORIZATION=f'Bearer {access_token}')
         self.assertEqual(response.status_code, 401)
 
+    def test_logout_without_refresh_token(self):
+        """Logging out without a refresh token should fail."""
+        self.create_user('logout-no-refresh@example.com', is_verified=True, otp='123456')
+        login_response = self.login('logout-no-refresh@example.com', 'sUp3rS3cr3t')
+        self.client.cookies['refresh_token'] = ''
+        response = self.client.post('/api/logout/', format='json')
+        self.assertEqual(response.status_code, 400)
+
     def test_refresh_without_refresh_token(self):
         """Refreshing without a refresh token should fail."""
         response = self.client.post('/api/token/refresh/', {}, format='json')
@@ -471,10 +479,13 @@ class AuthenticationEndpointTest(TestCase):
             otp_expires_at=timezone.now() + timedelta(minutes=10)
         )
         self.login('refresh@example.com', 'sUp3rS3cr3t')
+        old_refresh_token = self.client.cookies['refresh_token'].value
         response = self.client.post('/api/token/refresh/', format='json')
+        new_refresh_token = response.cookies['refresh_token'].value
 
         self.assertEqual(response.status_code, 200)
         self.validate_token_cookies(response, refresh_expected=False)
+        self.assertNotEqual(old_refresh_token, new_refresh_token)
 
     def test_refresh_token_with_invalid_token(self):
         """Refreshing the token with an invalid token should fail."""

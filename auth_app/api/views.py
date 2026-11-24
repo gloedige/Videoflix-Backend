@@ -269,11 +269,11 @@ class CookieRefreshView(TokenRefreshView):
         if not CustomUser.objects.filter(pk=user_id, is_active=True).exists():
             raise TokenError('User is inactive')
 
-    def respond_with_token_refreshed(self, access_token):
+    def respond_with_token_refreshed(self, new_access_token):
         '''Respond indicating the token has been refreshed successfully.'''
         return Response(
             {"detail": "Token refreshed",
-                'access': access_token,
+                'access': new_access_token,
             }, 
             status=status.HTTP_200_OK)
 
