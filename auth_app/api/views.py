@@ -120,13 +120,15 @@ class VerifyOTPView(APIView):
 
     def check_and_activate_user(self, user):
         '''Check if the OTP is still valid and activate the user if it is.'''
-        if check_otp_not_expired(user.otp_expires_at):    
-            user.is_verified = True
-            user.otp = None
-            user.otp_expires_at = None
-            user.save(update_fields=['is_verified', 'otp', 'otp_expires_at'])
-        else:
-            raise ValidationError("OTP has expired.")
+
+        with transaction.atomic():
+            if check_otp_not_expired(user.otp_expires_at):    
+                user.is_verified = True
+                user.otp = None
+                user.otp_expires_at = None
+                user.save(update_fields=['is_verified', 'otp', 'otp_expires_at'])
+            else:
+                raise ValidationError("OTP has expired.")
 
 class RegistrationView(APIView):
     ''' API view for user registration. '''
