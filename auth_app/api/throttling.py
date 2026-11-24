@@ -1,4 +1,5 @@
-from rest_framework.throttling import UserRateThrottle
+from rest_framework.throttling import AnonRateThrottle
 
-class VerifyOTPThrottle(UserRateThrottle):
+
+class VerifyOTPThrottle(AnonRateThrottle):
     scope = "verify_otp"
