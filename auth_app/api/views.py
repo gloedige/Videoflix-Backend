@@ -232,7 +232,6 @@ class CookieRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         '''Handle refreshing of JWT tokens using the refresh token from HttpOnly cookies.'''
         refresh_token = request.COOKIES.get('refresh_token')
-        access_token = request.COOKIES.get('access_token')
 
         if refresh_token is None:
             return self.respond_with_token_error()
@@ -241,9 +240,9 @@ class CookieRefreshView(TokenRefreshView):
         if serializer is None:
             return self.respond_with_token_error()
 
-        response = self.respond_with_token_refreshed(access_token)
-        response = delete_session_cookies(response)
         data = serializer.validated_data
+        response = self.respond_with_token_refreshed(serializer.validated_data.get('access'))
+        response = delete_session_cookies(response)
         return set_auth_cookies(response, data.get('access'), data.get('refresh'))
 
     def get_valid_refresh_serializer(self, token):
@@ -290,9 +289,29 @@ class CookieLogoutView(APIView):
             raise AuthenticationFailed('Access token is required.')
         return result[1]
 
+    def validate_refresh_cookie(self, request):
+        '''Validate the refresh cookie and return its verified JWT payload.'''
+        refresh_token = request.COOKIES.get('refresh_token')
+        if not refresh_token:
+            raise AuthenticationFailed('Refresh token is required.')
+        try:
+            validated_token = RefreshToken(refresh_token)
+        except TokenError:
+            raise AuthenticationFailed('Refresh token is invalid.')
+        return validated_token
+        
+
     def post(self, request):
         '''Handle user logout by blacklisting the refresh token and deleting HttpOnly cookies.'''
         access_token = self.authenticate_access_cookie(request)
+
+        try:
+            self.validate_refresh_cookie(request)
+        except (TokenError, AuthenticationFailed):
+            return Response(
+                {"detail": "Refresh token invalid or not provided"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         self.blacklist_refresh_cookie(request.COOKIES.get('refresh_token'))
         CookieJWTAuthentication().store_access_token_in_custom_storage(access_token)
         CookieJWTAuthentication().clear_deprecated_access_token()
