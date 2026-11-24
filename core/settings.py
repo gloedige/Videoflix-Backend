@@ -216,7 +216,7 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
 }
 
-AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "True") == "True"
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "False" if DEBUG else "True") == "True"
 
 LOGGING = {
     'version': 1,
