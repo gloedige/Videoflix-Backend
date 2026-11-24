@@ -16,7 +16,7 @@ class CustomUser(AbstractUser):
 
 class AccessTokenStorage(models.Model):
     """Model to store access tokens in a custom storage mechanism."""
-    access_token = models.TextField()
+    access_token = models.CharField(max_length=255, unique=True)
     expires_at = models.DateTimeField()
 
     class Meta:
