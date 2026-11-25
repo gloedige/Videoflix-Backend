@@ -34,7 +34,7 @@ def prepare_video_update(sender, instance, **kwargs):
     if not previous:
         return
     if previous.file.name != instance.file.name:
-        if previous.thumbnail.name == instance.thumbnail.name and previous.thumbnail.name.startswith(('hls/', 'thumbnails/generated/')):
+        if previous.thumbnail.name and previous.thumbnail.name == instance.thumbnail.name and previous.thumbnail.name.startswith(('hls/', 'thumbnails/generated/')):
             instance.thumbnail = None
         reset_processing(instance, thumbnail_only=False)
     elif previous.thumbnail and not instance.thumbnail:
