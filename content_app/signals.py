@@ -24,16 +24,27 @@ def enqueue_video(video_id, generation, thumbnail_only=False):
 
 @receiver(pre_save, sender=Video)
 def prepare_video_update(sender, instance, **kwargs):
-    """Invalidate readiness when an existing video loses its thumbnail."""
+    """Schedule fresh processing when the source or thumbnail changes."""
     if not instance.pk or kwargs.get('update_fields') is not None:
         return
     previous = Video.objects.filter(pk=instance.pk).first()
-    if previous and previous.thumbnail and not instance.thumbnail:
-        instance.processing_key = uuid.uuid4()
-        instance.processing_status = 'pending'
-        instance.processing_error = ''
-        instance._thumbnail_reprocess = bool(previous.hls_path)
-        instance._schedule_reprocess = True
+    if not previous:
+        return
+    if previous.file.name != instance.file.name:
+        if previous.thumbnail.name == instance.thumbnail.name and previous.thumbnail.name.startswith(('hls/', 'thumbnails/generated/')):
+            instance.thumbnail = None
+        reset_processing(instance, thumbnail_only=False)
+    elif previous.thumbnail and not instance.thumbnail:
+        reset_processing(instance, thumbnail_only=bool(previous.hls_path))
+
+
+def reset_processing(instance, thumbnail_only):
+    """Mark an updated video pending for a new processing generation."""
+    instance.processing_key = uuid.uuid4()
+    instance.processing_status = 'pending'
+    instance.processing_error = ''
+    instance._thumbnail_reprocess = thumbnail_only
+    instance._schedule_reprocess = True
 
 
 @receiver(post_save, sender=Video)
