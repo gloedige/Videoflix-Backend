@@ -88,6 +88,12 @@ class VideoProcessingTest(TestCase):
         self.assertEqual(client.get('/api/video/').data, [])
         video.refresh_from_db()
         self.assertNotEqual(video.processing_status, 'ready')
+        previous_hls = video.hls_path
+        tasks.process_thumbnail(video.pk, video.processing_key)
+        video.refresh_from_db()
+        self.assertEqual(video.hls_path, previous_hls)
+        self.assertTrue(Path(video.thumbnail.path).is_file())
+        self.assertEqual([item['id'] for item in client.get('/api/video/').data], [video.pk])
 
     def test_missing_ffmpeg_outputs_never_publish_the_video(self):
         """A successful process exit without output files does not publish a video."""
@@ -95,9 +101,8 @@ class VideoProcessingTest(TestCase):
             title='Missing files', description='Incomplete',
             file=SimpleUploadedFile('source.mp4', self.fixture.read_bytes()),
         )
-        with patch('content_app.tasks.subprocess.run'):
-            with self.assertLogs('content_app.tasks', level='ERROR'):
-                tasks.process_video(video.pk)
+        with patch('content_app.tasks.subprocess.run'), self.assertLogs('content_app.tasks', level='ERROR'):
+            tasks.process_video(video.pk)
         client = APIClient()
         client.force_authenticate(user=CustomUser.objects.create_user(username='viewer'))
         self.assertEqual(client.get('/api/video/').data, [])
@@ -123,13 +128,13 @@ class VideoProcessingTest(TestCase):
             username='admin', email='admin@example.com', password='password',
         )
         self.client.force_login(admin)
-        with patch('django_rq.get_queue', side_effect=ConnectionError('offline')):
-            with self.assertLogs('content_app.signals', level='ERROR'):
-                with self.captureOnCommitCallbacks(execute=True):
-                    response = self.client.post('/admin/content_app/video/add/', {
-                        'title': 'Queued', 'description': 'Film', 'category': 'Drama',
-                        'file': SimpleUploadedFile('source.mp4', self.fixture.read_bytes()),
-                    })
+        with (patch('django_rq.get_queue', side_effect=ConnectionError('offline')),
+              self.assertLogs('content_app.signals', level='ERROR'),
+              self.captureOnCommitCallbacks(execute=True)):
+            response = self.client.post('/admin/content_app/video/add/', {
+                'title': 'Queued', 'description': 'Film', 'category': 'Drama',
+                'file': SimpleUploadedFile('source.mp4', self.fixture.read_bytes()),
+            })
         self.assertEqual(response.status_code, 302)
         video = Video.objects.get(title='Queued')
         change = self.client.get(f'/admin/content_app/video/{video.pk}/change/')
