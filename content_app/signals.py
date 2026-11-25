@@ -14,12 +14,15 @@ logger = logging.getLogger(__name__)
 
 def enqueue_video(video_id, generation, thumbnail_only=False):
     """Enqueue a committed video generation or record the queue failure."""
+    query = Video.objects.filter(pk=video_id, processing_key=generation, processing_status='pending')
+    if not query.update(processing_status='queued'):
+        return
     try:
         task = process_thumbnail if thumbnail_only else process_video
         django_rq.get_queue('default').enqueue(task, video_id, str(generation))
     except Exception:
         logger.exception('Could not enqueue video %s', video_id)
-        Video.objects.filter(pk=video_id, processing_key=generation).update(
+        query.model.objects.filter(pk=video_id, processing_key=generation, processing_status='queued').update(
             processing_status='failed', processing_error='Queue unavailable; see logs.')
 
 @receiver(pre_save, sender=Video)

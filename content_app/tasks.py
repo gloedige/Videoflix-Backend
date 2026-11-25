@@ -42,7 +42,7 @@ def generate_thumbnail(source, output):
 
 def claim_video(video_id, key):
     """Claim the pending video generation identified by video_id and key."""
-    query = Video.objects.filter(pk=video_id, processing_key=key, processing_status='pending')
+    query = Video.objects.filter(pk=video_id, processing_key=key, processing_status__in=('pending', 'queued'))
     if not query.update(processing_status='processing', processing_error=''):
         return None
     return query.model.objects.filter(pk=video_id, processing_key=key).first()
