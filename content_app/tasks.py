@@ -56,11 +56,24 @@ def publish_video(video_id, key, relative_dir, generated_thumbnail):
             return False
         if not video.thumbnail and generated_thumbnail:
             video.thumbnail = generated_thumbnail
-        video.hls_path = relative_dir
+        old_hls_path = video.hls_path
+        if video.thumbnail:
+            video.hls_path = relative_dir
         video.processing_status = 'ready' if video.thumbnail else 'failed'
         video.processing_error = '' if video.thumbnail else 'Thumbnail unavailable.'
         video.save(update_fields=['thumbnail', 'hls_path', 'processing_status', 'processing_error'])
+        if video.processing_status == 'ready' and old_hls_path and old_hls_path != relative_dir:
+            transaction.on_commit(lambda: cleanup_old_hls(old_hls_path))
         return video.processing_status == 'ready'
+
+def cleanup_old_hls(old_hls_path):
+    """Remove the old HLS directory if it exists and is safe to delete."""
+    try:
+        if (old_hls_path and not Video.objects.filter(hls_path=old_hls_path).exists()
+                and check_thumbnails_not_in_old_hls(old_hls_path)):
+            remove_old_directory(Path(settings.MEDIA_ROOT) / old_hls_path)
+    except Exception:
+        logger.exception('Could not clean up old HLS directory %s', old_hls_path)
 
 
 def convert_video(video, output):
@@ -110,3 +123,12 @@ def process_video(video_id, generation=None):
         Video.objects.filter(pk=video_id, processing_key=key).update(
             processing_status='failed', processing_error='Video processing failed; see logs.')
         shutil.rmtree(output, ignore_errors=True)
+
+def remove_old_directory(directory):
+    """Remove the specified directory if it exists and is a directory."""
+    if directory.exists() and directory.is_dir():
+        shutil.rmtree(directory)
+
+def check_thumbnails_not_in_old_hls(old_hls_path):
+    """Check if there are no thumbnails referencing the old HLS path."""
+    return not Video.objects.filter(thumbnail__startswith=old_hls_path.rstrip('/') + '/').exists()

@@ -1,4 +1,5 @@
 import subprocess
+import uuid
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -89,9 +90,11 @@ class VideoProcessingTest(TestCase):
         video.refresh_from_db()
         self.assertNotEqual(video.processing_status, 'ready')
         previous_hls = video.hls_path
-        tasks.process_thumbnail(video.pk, video.processing_key)
+        with self.captureOnCommitCallbacks(execute=True):
+            tasks.process_thumbnail(video.pk, video.processing_key)
         video.refresh_from_db()
         self.assertEqual(video.hls_path, previous_hls)
+        self.assertTrue((Path(self.directory.name) / previous_hls / '480p' / 'index.m3u8').is_file())
         self.assertTrue(Path(video.thumbnail.path).is_file())
         self.assertEqual([item['id'] for item in client.get('/api/video/').data], [video.pk])
 
@@ -162,3 +165,96 @@ class VideoProcessingTest(TestCase):
         client = APIClient()
         client.force_authenticate(user=admin)
         self.assertEqual(client.get('/api/video/').data, [])
+
+    def test_reprocessing_preserves_hls_referenced_by_another_video(self):
+        """A different video's active HLS directory survives reprocessing."""
+        video = Video.objects.create(
+            title='Original', description='A film',
+            file=SimpleUploadedFile('source.mp4', self.fixture.read_bytes()),
+            thumbnail=SimpleUploadedFile('manual.jpg', b'manual'),
+        )
+        tasks.process_video(video.pk)
+        video.refresh_from_db()
+        old_path = video.hls_path
+        Video.objects.bulk_create([Video(
+            title='Other', description='Shared HLS', file='videos/other.mp4',
+            thumbnail='thumbnails/other.jpg', hls_path=old_path, processing_status='ready',
+        )])
+        Video.objects.filter(pk=video.pk).update(processing_status='pending', processing_key=uuid.uuid4())
+        with self.captureOnCommitCallbacks(execute=True):
+            tasks.process_video(video.pk)
+        self.assertTrue((Path(self.directory.name) / old_path / '480p' / 'index.m3u8').is_file())
+
+    def test_cleanup_error_does_not_remove_new_generation(self):
+        """A failed old-directory deletion must not undo the successful new video."""
+        video = Video.objects.create(
+            title='Original', description='A film',
+            file=SimpleUploadedFile('source.mp4', self.fixture.read_bytes()),
+            thumbnail=SimpleUploadedFile('manual.jpg', b'manual'),
+        )
+        tasks.process_video(video.pk)
+        video.refresh_from_db()
+        old_path = video.hls_path
+        Video.objects.filter(pk=video.pk).update(processing_status='pending', processing_key=uuid.uuid4())
+        with (patch('content_app.tasks.shutil.rmtree', side_effect=OSError('denied')),
+              self.assertLogs('content_app.tasks', level='ERROR'),
+              self.captureOnCommitCallbacks(execute=True)):
+            tasks.process_video(video.pk)
+        video.refresh_from_db()
+        self.assertEqual(video.processing_status, 'ready')
+        self.assertNotEqual(video.hls_path, old_path)
+        self.assertTrue((Path(self.directory.name) / video.hls_path / '480p' / 'index.m3u8').is_file())
+
+    def test_reprocessing_removes_unreferenced_old_generation_after_commit(self):
+        """A successfully replaced, unreferenced generation is removed only after commit."""
+        video = Video.objects.create(
+            title='Original', description='A film',
+            file=SimpleUploadedFile('source.mp4', self.fixture.read_bytes()),
+            thumbnail=SimpleUploadedFile('manual.jpg', b'manual'),
+        )
+        tasks.process_video(video.pk)
+        video.refresh_from_db()
+        old_directory = Path(self.directory.name) / video.hls_path
+        Video.objects.filter(pk=video.pk).update(processing_status='pending', processing_key=uuid.uuid4())
+        with self.captureOnCommitCallbacks(execute=True):
+            tasks.process_video(video.pk)
+            self.assertTrue(old_directory.is_dir())
+        video.refresh_from_db()
+        self.assertFalse(old_directory.exists())
+        self.assertTrue((Path(self.directory.name) / video.hls_path / '480p' / 'index.m3u8').is_file())
+
+    def test_failed_publication_keeps_previous_generation(self):
+        """Without a thumbnail publication fails without replacing the old HLS path."""
+        video = Video.objects.create(
+            title='Original', description='A film',
+            file=SimpleUploadedFile('source.mp4', self.fixture.read_bytes()),
+        )
+        tasks.process_video(video.pk)
+        video.refresh_from_db()
+        old_path = video.hls_path
+        Video.objects.filter(pk=video.pk).update(
+            processing_status='pending', processing_key=uuid.uuid4(), thumbnail='',
+        )
+        with patch('content_app.tasks.convert_video', return_value=''), self.captureOnCommitCallbacks(execute=True):
+            tasks.process_video(video.pk)
+        video.refresh_from_db()
+        self.assertEqual(video.processing_status, 'failed')
+        self.assertEqual(video.hls_path, old_path)
+        self.assertTrue((Path(self.directory.name) / old_path / '480p' / 'index.m3u8').is_file())
+
+    def test_reprocessing_preserves_old_directory_with_referenced_thumbnail(self):
+        """An existing thumbnail inside the old HLS directory remains accessible."""
+        video = Video.objects.create(
+            title='Original', description='A film',
+            file=SimpleUploadedFile('source.mp4', self.fixture.read_bytes()),
+        )
+        tasks.process_video(video.pk)
+        video.refresh_from_db()
+        thumbnail_path = Path(video.thumbnail.path)
+        Video.objects.filter(pk=video.pk).update(processing_status='pending', processing_key=uuid.uuid4())
+        with self.captureOnCommitCallbacks(execute=True):
+            tasks.process_video(video.pk)
+        video.refresh_from_db()
+        self.assertEqual(video.processing_status, 'ready')
+        self.assertTrue(thumbnail_path.is_file())
+        self.assertEqual(Path(video.thumbnail.path), thumbnail_path)
