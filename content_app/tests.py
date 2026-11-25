@@ -36,11 +36,11 @@ class VideoListEndpointTest(TestCase):
 		self.authenticate()
 		older = Video.objects.create(
 			title='Older film', description='Older description', file='videos/older.mp4',
-			thumbnail='thumbnails/older.jpg', category='Drama',
+			thumbnail='thumbnails/older.jpg', category='Drama', processing_status='ready',
 		)
 		newer = Video.objects.create(
 			title='Newer film', description='Newer description', file='videos/newer.mp4',
-			thumbnail='thumbnails/newer.jpg', category='Comedy',
+			thumbnail='thumbnails/newer.jpg', category='Comedy', processing_status='ready',
 		)
 		Video.objects.filter(pk=older.pk).update(created_at=timezone.now() - timedelta(days=1))
 		Video.objects.filter(pk=newer.pk).update(created_at=timezone.now())
