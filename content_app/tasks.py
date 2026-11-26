@@ -74,11 +74,36 @@ def handle_old_hls_cleanup(relative_dir, video, old_hls_path):
 def cleanup_old_hls(old_hls_path):
     """Remove the old HLS directory if it exists and is safe to delete."""
     try:
-        if (old_hls_path and not Video.objects.filter(hls_path=old_hls_path).exists()
+        directory = (Path(settings.MEDIA_ROOT) / old_hls_path).resolve()
+        root = Path(settings.MEDIA_ROOT).resolve()
+        if (old_hls_path and directory.is_relative_to(root)
+                and not Video.objects.filter(hls_path=old_hls_path).exists()
                 and check_thumbnails_not_in_old_hls(old_hls_path)):
-            remove_old_directory(Path(settings.MEDIA_ROOT) / old_hls_path)
+            remove_old_directory(directory)
     except Exception:
         logger.exception('Could not clean up old HLS directory %s', old_hls_path)
+
+
+def cleanup_replaced_assets(file_name, thumbnail_name):
+    """Remove replaced source and thumbnail files when no video references them."""
+    cleanup_stored_file('file', file_name)
+    cleanup_stored_file('thumbnail', thumbnail_name)
+
+
+def cleanup_stored_file(field_name, name):
+    """Delete an unreferenced stored file and log storage errors."""
+    if not name or Video.objects.filter(**{field_name: name}).exists():
+        return
+    try:
+        Video._meta.get_field(field_name).storage.delete(name)
+    except Exception:
+        logger.exception('Could not delete unreferenced %s file %s', field_name, name)
+
+
+def cleanup_deleted_video_assets(file_name, thumbnail_name, hls_path):
+    """Remove a deleted video's files after its DB row is committed."""
+    cleanup_replaced_assets(file_name, thumbnail_name)
+    cleanup_old_hls(hls_path)
 
 
 def convert_video(video, output):

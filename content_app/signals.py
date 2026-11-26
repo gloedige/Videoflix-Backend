@@ -3,11 +3,16 @@ import uuid
 
 import django_rq
 from django.db import transaction
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
 from content_app.models import Video
-from content_app.tasks import process_thumbnail, process_video
+from content_app.tasks import (
+    cleanup_deleted_video_assets,
+    cleanup_replaced_assets,
+    process_thumbnail,
+    process_video,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +38,9 @@ def prepare_video_update(sender, instance, **kwargs):
     previous = Video.objects.filter(pk=instance.pk).first()
     if not previous:
         return
+    old_file = previous.file.name if previous.file.name != instance.file.name else ''
+    old_thumbnail = previous.thumbnail.name if previous.thumbnail.name != instance.thumbnail.name else ''
+    instance._old_assets = (old_file, old_thumbnail)
     if previous.file.name != instance.file.name:
         if previous.thumbnail.name and previous.thumbnail.name == instance.thumbnail.name and previous.thumbnail.name.startswith(('hls/', 'thumbnails/generated/')):
             instance.thumbnail = None
@@ -57,3 +65,14 @@ def video_post_save(sender, instance, created, **kwargs):
         video_id, key = instance.pk, instance.processing_key
         thumbnail_only = getattr(instance, '_thumbnail_reprocess', False)
         transaction.on_commit(lambda: enqueue_video(video_id, key, thumbnail_only))
+    old_assets = getattr(instance, '_old_assets', None)
+    if any(old_assets or ()):
+        transaction.on_commit(lambda assets=old_assets: cleanup_replaced_assets(*assets))
+        del instance._old_assets
+
+
+@receiver(post_delete, sender=Video)
+def video_post_delete(sender, instance, **kwargs):
+    """Clean up unreferenced media after the video deletion commits."""
+    assets = (instance.file.name, instance.thumbnail.name, instance.hls_path)
+    transaction.on_commit(lambda: cleanup_deleted_video_assets(*assets))
