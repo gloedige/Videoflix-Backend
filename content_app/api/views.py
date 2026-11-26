@@ -10,4 +10,4 @@ class VideoListView(ListAPIView):
 
     permission_classes = (IsAuthenticated,)
     serializer_class = VideoListSerializer
-    queryset = Video.objects.all()
+    queryset = Video.objects.filter(processing_status='ready', thumbnail__isnull=False).exclude(thumbnail='')

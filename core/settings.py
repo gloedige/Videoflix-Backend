@@ -206,7 +206,7 @@ REST_FRAMEWORK = {
     }
 }
 
-CUSTOM_ACCESS_COOKIE_LIFETIME = 10 * 60  # in seconds, matches ACCESS_TOKEN_LIFETIME of 10 minutes
+CUSTOM_ACCESS_COOKIE_LIFETIME = 30 * 60  # in seconds, shared by the access cookie and JWT
 CUSTOM_REFRESH_COOKIE_LIFETIME = 24 * 60 * 60  # in seconds, matches REFRESH_TOKEN_LIFETIME of 1 day
 
 SIMPLE_JWT = {
