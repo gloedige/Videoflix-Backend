@@ -1,16 +1,24 @@
 # Videoflix Backend
 
-Videoflix Backend is a Django REST Framework application for account registration and authentication, a video catalog, and authenticated HLS playback. Videos are managed through Django Admin and processed asynchronously with FFmpeg using Django RQ and Redis. The associated Vanilla JavaScript frontend is maintained separately in the [Developer Akademie Videoflix frontend repository](https://github.com/Developer-Akademie-Backendkurs/project.Videoflix).
+[![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Django](https://img.shields.io/badge/Django-6.1.3-092E20?logo=django&logoColor=white)](https://www.djangoproject.com/)
+[![Django REST Framework](https://img.shields.io/badge/Django%20REST%20Framework-3.18.3-red)](https://www.django-rest-framework.org/)
+[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Queue%20and%20cache-Redis-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+[![FFmpeg](https://img.shields.io/badge/Video-FFmpeg-007808)](https://ffmpeg.org/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+Videoflix Backend provides account registration and authentication, a video catalog, and authenticated HLS playback. Videos are managed through Django Admin and processed asynchronously with FFmpeg, Django RQ, and Redis. The associated Vanilla JavaScript frontend is maintained separately in the [Developer Akademie Videoflix frontend repository](https://github.com/Developer-Akademie-Backendkurs/project.Videoflix).
 
 > **Implementation status:** This README describes behavior found in the current source code. The API specification and project checklists include requirements beyond the implementation; only routes and behavior listed below are confirmed as implemented.
 
 ## Table of contents
 
-- [Requirements](#requirements)
-- [Quick start with Docker Compose](#quick-start-with-docker-compose)
-- [Local development without Docker](#local-development-without-docker)
-- [Configuration](#configuration)
+- [Features](#features)
+- [Getting started](#getting-started)
+- [Tech stack](#tech-stack)
 - [Project structure](#project-structure)
+- [Configuration](#configuration)
 - [Frontend setup and integration](#frontend-setup-and-integration)
 - [Implemented features](#implemented-features)
 - [Authentication](#authentication)
@@ -20,71 +28,43 @@ Videoflix Backend is a Django REST Framework application for account registratio
 - [Security and operational notes](#security-and-operational-notes)
 - [License](#license)
 
-## Requirements
+## Features
 
-- Docker Engine and Docker Compose for the documented container workflow.
-- The backend image is based on Python 3.12 Alpine and installs FFmpeg and the PostgreSQL client. For local development outside Docker, use Python 3.12 and install FFmpeg separately; PostgreSQL and Redis must also be available.
-- PostgreSQL and Redis are started by the included Compose configuration.
+- Register accounts, activate them by email OTP, log in, refresh tokens, log out, and reset passwords.
+- Authenticate browser and API requests with HttpOnly JWT cookies.
+- List ready videos and play authenticated HLS playlists and segments.
+- Manage uploads and processing status through Django Admin.
+- Convert source videos to 480p, 720p, and 1080p HLS in a background RQ worker; create a thumbnail when one was not uploaded.
+- Protect direct media-file URLs and clean up replaced or deleted, unreferenced media assets.
 
-The repository does not declare a confirmed public clone URL. Obtain the repository URL from its owner, then substitute it for `<repository-url>`:
+## Getting started
+
+The following steps set up and run the backend locally on your machine, with PostgreSQL and Redis provided by Docker Compose.
+
+### Prerequisites
+
+- Git.
+- Python 3.12 and `pip`.
+- FFmpeg installed and available on your `PATH` for local video processing. The Docker backend image installs FFmpeg for the container workflow.
+- Docker Engine with Docker Compose, used here to run PostgreSQL and Redis.
+
+### 1. Clone the repository
+
+Clone the backend repository (the configured remote uses GitHub SSH; configure an SSH key with GitHub first):
 
 ```sh
-git clone <repository-url> Videoflix-Backend
+git clone git@github.com:gloedige/Videoflix-Backend.git
 cd Videoflix-Backend
 ```
 
-## Quick start with Docker Compose
+### 2. Create a virtual environment and install Python dependencies
 
-1. Copy the environment template and replace every placeholder, especially secrets and database credentials. Do not commit `.env`.
-
-   **PowerShell:**
-
-   ```powershell
-   Copy-Item .env.template .env
-   ```
-
-   **macOS/Linux:**
-
-   ```sh
-   cp .env.template .env
-   ```
-
-2. Start the services from the repository root:
-
-   ```sh
-   docker compose up --build -d
-   ```
-
-   The Compose file defines PostgreSQL, Redis, and the Django `web` service. The backend is available at `http://localhost:8000/`. The Admin is at `http://localhost:8000/admin/`; create credentials through the configured superuser environment variables before relying on an Admin account.
-
-3. The web entrypoint waits for PostgreSQL, runs `collectstatic`, `makemigrations`, and `migrate`, creates the configured superuser if absent, starts an RQ worker for the `default` queue, and then starts Gunicorn. Inspect startup output with:
-
-   ```sh
-   docker compose logs -f web
-   ```
-
-4. Stop the services with `docker compose down`. Named volumes retain PostgreSQL data, Redis data, uploaded media, and collected static files. `docker compose down -v` also removes the named volumes and their data; use that only when you intentionally want to delete it.
-
-The Compose service bind-mounts the working tree into `/app`. Rebuild the image with `docker compose up --build -d` after changing dependencies, the Dockerfile, or other image-installed components. Ordinary Python source changes are visible through the bind mount; the entrypoint runs Gunicorn with reload enabled.
-
-## Local development without Docker
-
-A native workflow is possible but requires local PostgreSQL, Redis, and FFmpeg. The checked-in defaults use Compose hostnames (`db` and `redis`), so override them for host-based development, for example with `DB_HOST=localhost`, `REDIS_HOST=localhost`, and `REDIS_LOCATION=redis://localhost:6379/1`. Configure the remaining required database credentials in `.env`.
-
-**PowerShell:**
+**Windows PowerShell:**
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python manage.py migrate
-python manage.py runserver
-```
-
-In another activated terminal, start the background worker:
-
-```powershell
-python manage.py rqworker default
 ```
 
 **macOS/Linux:**
@@ -93,21 +73,119 @@ python manage.py rqworker default
 python3.12 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
+```
+
+### 3. Install FFmpeg
+
+Install FFmpeg using the instructions for your operating system from [ffmpeg.org](https://ffmpeg.org/download.html), and confirm the `ffmpeg` executable is available in the terminal `PATH`. If using the all-container option below, the backend image already installs FFmpeg.
+
+### 4. Configure environment variables
+
+Copy `.env.template` to `.env`, then replace placeholders with local database credentials and a private Django secret. Never commit `.env` or real credentials.
+
+**Windows PowerShell:**
+
+```powershell
+Copy-Item .env.template .env
+```
+
+**macOS/Linux:**
+
+```sh
+cp .env.template .env
+```
+
+For running Django on the host while PostgreSQL and Redis run in Compose, set `DB_HOST=localhost`, `REDIS_HOST=localhost`, and `REDIS_LOCATION=redis://localhost:6379/1` in `.env`. Keep the DB name, user, and password consistent with the Compose PostgreSQL service. The template's email settings are placeholders; the current email backend prints messages to the console rather than sending SMTP mail.
+
+### 5. Start PostgreSQL and Redis
+
+From the repository root:
+
+```sh
+docker compose up -d db redis
+```
+
+### 6. Migrate the database and create an admin user
+
+In the activated virtual environment:
+
+```sh
 python manage.py migrate
+python manage.py createsuperuser
+```
+
+### 7. Start the backend and its background worker
+
+Run Django in one terminal:
+
+```sh
 python manage.py runserver
 ```
 
-In another activated terminal:
+Run the RQ worker in a second terminal with the same virtual environment activated:
 
 ```sh
 python manage.py rqworker default
 ```
 
-The local API is at `http://127.0.0.1:8000/`. These host-based steps follow Django conventions and project settings; the provided Docker workflow is the repository's configured all-services setup.
+The API is available at `http://127.0.0.1:8000/`, and Django Admin at `http://127.0.0.1:8000/admin/`.
+
+### Alternative: run the complete stack in Docker
+
+If you prefer not to install Python dependencies or FFmpeg on the host, configure `.env` with the Compose service hostnames (`DB_HOST=db`, `REDIS_HOST=redis`, `REDIS_LOCATION=redis://redis:6379/1`) and run:
+
+```sh
+docker compose up --build -d
+docker compose logs -f web
+```
+
+The entrypoint waits for PostgreSQL, collects static files, runs migrations, creates the configured superuser if absent, starts the `default` RQ worker, then starts Gunicorn. The backend is at `http://localhost:8000/`; Admin is at `http://localhost:8000/admin/`. The source tree is bind-mounted into the backend container. Rebuild after changing dependencies or image-installed components. `docker compose down` stops containers but preserves named volumes; `docker compose down -v` also deletes their data.
+
+## Tech stack
+
+| Area | Technology |
+| --- | --- |
+| Language and web framework | Python 3.12, Django 6.1.3 |
+| API | Django REST Framework 3.18.3 |
+| Authentication | SimpleJWT 5.5.1 with custom cookie JWT authentication |
+| Database | PostgreSQL (`psycopg2-binary` 2.9.13) |
+| Cache and background jobs | Redis 8.1.0, django-redis 7.0.0, django-rq 4.2.0, RQ 3.0.0 |
+| Video processing | FFmpeg, installed in the backend Docker image |
+| Static assets | WhiteNoise 6.12.0 |
+| Tests | Django test runner |
+
+Dependency versions are taken from `requirements.txt`; the Python image version is taken from `backend.Dockerfile`.
+
+## Project structure
+
+```text
+Videoflix-Backend/
+├── auth_app/                  # Users, OTP activation, JWT authentication, password reset
+│   ├── api/                   # Authentication serializers, views, and routes
+│   ├── migrations/            # Auth database migrations
+│   ├── templates/auth_app/    # HTML email templates
+│   └── tests/                 # Authentication tests
+├── content_app/               # Video model, admin, processing, and media lifecycle
+│   ├── api/                   # Video list, protected media, HLS views and routes
+│   ├── migrations/            # Video database migrations
+│   └── tests/                 # Video, streaming, and cleanup tests
+├── core/                      # Django settings and root URL/ASGI/WSGI configuration
+├── media/                     # Local media root; Docker mounts a persistent volume here
+├── static/                    # Collected static files
+├── .env.template              # Environment-variable template
+├── backend.Dockerfile         # Python, FFmpeg and backend image
+├── backend.entrypoint.sh      # Migrations, superuser, RQ worker and Gunicorn startup
+├── docker-compose.yml         # PostgreSQL, Redis and backend services
+├── manage.py                  # Django management commands
+├── requirements.txt           # Pinned Python dependencies
+└── LICENSE                    # MIT license
+```
 
 ## Configuration
 
 Settings are read from environment variables, with `.env` loaded by `core/settings.py`. `.env.template` is a placeholder template, not a production-ready configuration. Never use its sample or insecure-looking values as real credentials.
+
+> **Email delivery status:** The current `EMAIL_BACKEND` is `django.core.mail.backends.console.EmailBackend`. Activation and password-reset messages are printed to the backend process output; they are **not sent through SMTP**. The `EMAIL_HOST` and related SMTP variables are defined, but will not send email until `EMAIL_BACKEND` is deliberately changed to an SMTP backend.
 
 | Variable | Purpose / observed behavior |
 |---|---|
@@ -125,25 +203,7 @@ Settings are read from environment variables, with `.env` loaded by `core/settin
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `EMAIL_USE_SSL`, `DEFAULT_FROM_EMAIL` | SMTP-related settings are present. However, the current `EMAIL_BACKEND` is Django's console backend, so the configured SMTP values are not currently used to send mail. |
 | `AUTH_COOKIE_SECURE` | Overrides whether auth cookies use the `Secure` attribute; defaults to `False` when `DEBUG=True` and `True` otherwise. |
 
-## Project structure
-
-```text
-auth_app/       Registration, activation, login, logout, reset, JWT auth, and tests
-content_app/    Video model, admin, background processing, HLS and media APIs, tests
-core/           Django settings, root URL configuration, ASGI and WSGI entry points
-media/          Local media directory (Docker uses a persistent named volume)
-static/         Collected static files
-.env.template   Environment-variable template; copy to the ignored .env file
-backend.Dockerfile
-                Backend image definition, including FFmpeg installation
 docker-compose.yml
-                PostgreSQL, Redis and backend service definitions
-backend.entrypoint.sh
-                Startup initialization, migrations, superuser creation, RQ worker and Gunicorn
-requirements.txt
-                Pinned Python dependencies
-```
-
 The frontend is maintained separately; its source is not included in this backend repository. The frontend repository README states that it is intended for Developer Akademie students and is not freely licensed for redistribution. Review that repository's terms before copying or redistributing it.
 
 ## Frontend setup and integration
