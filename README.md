@@ -247,7 +247,6 @@ The tests use Django's test runner and include API, auth, cleanup, and FFmpeg in
 - The Docker entrypoint runs `makemigrations` at startup as well as `migrate`. This is the current project behavior; production migration management should be reviewed before deployment.
 - The Django-RQ dashboard is mounted at `/django-rq/`; access control for this dashboard should be reviewed before exposing it beyond a trusted development environment.
 - The configured email backend is `console`, so activation and reset messages are written to application output rather than delivered by the SMTP settings until the backend is changed.
-- No confirmed frontend repository URL or public repository clone URL is available in this workspace.
 
 ## License
 
