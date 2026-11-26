@@ -5,6 +5,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 
 from content_app.models import Video
 
@@ -82,7 +83,7 @@ def convert_video(video, output):
         generate_variant(video.file.path, output / f'{height}p', height)
     if not video.thumbnail:
         generate_thumbnail(video.file.path, output / 'thumbnail.jpg')
-        return str((output / 'thumbnail.jpg').relative_to(settings.MEDIA_ROOT))
+        return (output / 'thumbnail.jpg').relative_to(settings.MEDIA_ROOT).as_posix()
     return ''
 
 
@@ -131,4 +132,8 @@ def remove_old_directory(directory):
 
 def check_thumbnails_not_in_old_hls(old_hls_path):
     """Check if there are no thumbnails referencing the old HLS path."""
-    return not Video.objects.filter(thumbnail__startswith=old_hls_path.rstrip('/') + '/').exists()
+    path = old_hls_path.replace('\\', '/').rstrip('/')
+    return not Video.objects.filter(
+        Q(thumbnail__startswith=path + '/')
+        | Q(thumbnail__startswith=path.replace('/', '\\') + '\\')
+    ).exists()
