@@ -1,6 +1,6 @@
 # Videoflix Backend
 
-Videoflix Backend is a Django REST Framework application for account registration and authentication, a video catalog, and authenticated HLS playback. Videos are managed through Django Admin and processed asynchronously with FFmpeg using Django RQ and Redis. This repository contains the backend; no frontend source is present in this workspace.
+Videoflix Backend is a Django REST Framework application for account registration and authentication, a video catalog, and authenticated HLS playback. Videos are managed through Django Admin and processed asynchronously with FFmpeg using Django RQ and Redis. The associated Vanilla JavaScript frontend is maintained separately in the [Developer Akademie Videoflix frontend repository](https://github.com/Developer-Akademie-Backendkurs/project.Videoflix).
 
 > **Implementation status:** This README describes behavior found in the current source code. The API specification and project checklists include requirements beyond the implementation; only routes and behavior listed below are confirmed as implemented.
 
@@ -11,6 +11,7 @@ Videoflix Backend is a Django REST Framework application for account registratio
 - [Local development without Docker](#local-development-without-docker)
 - [Configuration](#configuration)
 - [Project structure](#project-structure)
+- [Frontend setup and integration](#frontend-setup-and-integration)
 - [Implemented features](#implemented-features)
 - [Authentication](#authentication)
 - [API reference](#api-reference)
@@ -116,6 +117,7 @@ Settings are read from environment variables, with `.env` loaded by `core/settin
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated trusted origins; defaults to local frontend origins. |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins; defaults to `http://localhost:5500`. Credentials are allowed. |
 | `FRONTEND_URL` | Base URL used to construct activation and password-reset links; defaults to `http://localhost:5500`. |
+| Frontend `API_BASE_URL` | In the linked frontend's `shared/js/config.js`, the API root is currently `http://127.0.0.1:8000/api/`. Change it there only when the backend is hosted at a different address. |
 | `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | PostgreSQL connection. Docker Compose expects the database service name `db`; settings default to `db` and port `5432`. |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB` | Django RQ connection; Compose service hostname is `redis`, default port `6379`, default RQ database `0`. |
 | `REDIS_LOCATION` | Redis cache URL; defaults to `redis://redis:6379/1`. |
@@ -142,7 +144,15 @@ requirements.txt
                 Pinned Python dependencies
 ```
 
-No frontend application is included in this repository. A frontend must use the backend base URL and an origin allowed by `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS`. With cookie authentication, browser requests that need credentials must include cookies; use HTTPS and secure cookies outside local development.
+The frontend is maintained separately; its source is not included in this backend repository. The frontend repository README states that it is intended for Developer Akademie students and is not freely licensed for redistribution. Review that repository's terms before copying or redistributing it.
+
+## Frontend setup and integration
+
+The linked frontend uses plain HTML, CSS, and Vanilla JavaScript; it does not require a frontend framework or package installation. Its README recommends opening the frontend project in Visual Studio Code and serving the root `index.html` with the Live Server extension (or an equivalent local static server). Serve it over HTTP rather than opening a `file://` URL so browser origin and cookie behavior work as expected.
+
+The frontend's `shared/js/config.js` currently sets `API_BASE_URL` to `http://127.0.0.1:8000/api/`. Its README says that normally no frontend file changes are needed for the supplied local setup. The backend's current `CORS_ALLOWED_ORIGINS` default is `http://localhost:5500`; this matches the usual Live Server origin. If Live Server uses a different host or port, add that exact frontend origin to the backend's `CORS_ALLOWED_ORIGINS` environment variable. CORS entries are for the browser page's origin, not merely the API destination.
+
+The frontend sends API requests with `credentials: 'include'` and configures HLS.js XHR requests with `withCredentials = true`. This allows the backend's HttpOnly JWT cookies to accompany login-dependent API, playlist, segment, and media requests. The frontend does not read the token itself. It also attempts an access-token refresh every 20 minutes. For non-local deployments, coordinate the frontend API URL, backend CORS/CSRF origin settings, HTTPS, and secure cookie configuration; the frontend's local API URL does not configure a deployed backend automatically.
 
 ## Implemented features
 
