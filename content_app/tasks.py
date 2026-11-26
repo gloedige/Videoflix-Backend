@@ -1,6 +1,7 @@
 import logging
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 
 from django.conf import settings
@@ -74,9 +75,15 @@ def handle_old_hls_cleanup(relative_dir, video, old_hls_path):
 def cleanup_old_hls(old_hls_path):
     """Remove the old HLS directory if it exists and is safe to delete."""
     try:
+        parts = old_hls_path.split('/') if old_hls_path else []
+        if len(parts) != 3 or parts[0] != 'hls' or not parts[1].isdigit():
+            return
+        uuid.UUID(parts[2])
         directory = (Path(settings.MEDIA_ROOT) / old_hls_path).resolve()
         root = Path(settings.MEDIA_ROOT).resolve()
-        if (old_hls_path and directory.is_relative_to(root)
+        hls_root = (root / 'hls').resolve()
+        if (directory != hls_root and directory.parent.parent == hls_root
+                and directory.is_relative_to(root)
                 and not Video.objects.filter(hls_path=old_hls_path).exists()
                 and check_thumbnails_not_in_old_hls(old_hls_path)):
             remove_old_directory(directory)

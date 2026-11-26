@@ -103,3 +103,15 @@ class VideoAssetCleanupTest(TestCase):
         for path in paths:
             with self.subTest(path=path):
                 self.assertTrue(path.exists())
+
+    def test_cleanup_refuses_media_root_and_paths_outside_hls_namespace(self):
+        """Malformed legacy HLS paths cannot delete MEDIA_ROOT or other media."""
+        root = Path(self.directory.name).resolve()
+        protected = root / 'videos' / 'source.mp4'
+        protected.parent.mkdir(parents=True)
+        protected.write_bytes(b'keep')
+        for unsafe_path in ('.', 'hls/..', 'thumbnails'):
+            with self.subTest(path=unsafe_path):
+                tasks.cleanup_old_hls(unsafe_path)
+                self.assertTrue(protected.exists())
+                self.assertTrue(root.exists())
