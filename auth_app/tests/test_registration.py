@@ -44,7 +44,7 @@ class RegistrationTest(TestCase):
             self.assertFalse(User.objects.filter(email=email).exists())
     
     def test_registration_denys_email_with_different_case(self):
-            """An email differing only in writingcase can still register."""
+            """Deny registration if the email differs only in case from an existing user."""
             self.create_user(
                 email='existing@example.com',
                 is_verified=True,
