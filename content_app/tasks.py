@@ -100,6 +100,10 @@ def process_thumbnail(video_id, generation):
             output.unlink(missing_ok=True)
     except Exception:
         logger.exception('Thumbnail processing failed for video %s', video_id)
+        try:
+            output.unlink(missing_ok=True)
+        except OSError:
+            logger.exception('Could not remove generated thumbnail %s', output)
         Video.objects.filter(pk=video_id, processing_key=generation).update(
             processing_status='failed', processing_error='Thumbnail processing failed; see logs.')
 
