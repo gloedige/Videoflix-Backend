@@ -1,6 +1,5 @@
 import logging
 import uuid
-from pathlib import Path
 
 import django_rq
 from django.db import transaction

@@ -63,9 +63,13 @@ def publish_video(video_id, key, relative_dir, generated_thumbnail):
         video.processing_status = 'ready' if video.thumbnail else 'failed'
         video.processing_error = '' if video.thumbnail else 'Thumbnail unavailable.'
         video.save(update_fields=['thumbnail', 'hls_path', 'processing_status', 'processing_error'])
-        if video.processing_status == 'ready' and old_hls_path and old_hls_path != relative_dir:
-            transaction.on_commit(lambda: cleanup_old_hls(old_hls_path))
+        handle_old_hls_cleanup(relative_dir, video, old_hls_path)
         return video.processing_status == 'ready'
+
+def handle_old_hls_cleanup(relative_dir, video, old_hls_path):
+    """Schedule cleanup of the old HLS directory if the video is ready and the path has changed."""
+    if video.processing_status == 'ready' and old_hls_path and old_hls_path != relative_dir:
+        transaction.on_commit(lambda: cleanup_old_hls(old_hls_path))
 
 def cleanup_old_hls(old_hls_path):
     """Remove the old HLS directory if it exists and is safe to delete."""
@@ -94,19 +98,30 @@ def process_thumbnail(video_id, generation):
         return
     relative = f'thumbnails/generated/{video_id}/{generation}.jpg'
     output = Path(settings.MEDIA_ROOT) / relative
+    handle_thumbnail_generation(video_id, generation, video, relative, output)
+
+def handle_thumbnail_generation(video_id, generation, video, relative, output):
+    """Handle the generation of a thumbnail for a video, including error handling."""
     try:
         generate_thumbnail(video.file.path, output)
         if not publish_video(video_id, generation, video.hls_path, relative):
             output.unlink(missing_ok=True)
     except Exception:
         logger.exception('Thumbnail processing failed for video %s', video_id)
-        try:
-            output.unlink(missing_ok=True)
-        except OSError:
-            logger.exception('Could not remove generated thumbnail %s', output)
-        Video.objects.filter(pk=video_id, processing_key=generation).update(
-            processing_status='failed', processing_error='Thumbnail processing failed; see logs.')
+        remove_generated_thumbnail(output)
+        update_video_processing_status(video_id, generation)
 
+def remove_generated_thumbnail(output):
+    """Remove the generated thumbnail file if it exists."""
+    try:
+        output.unlink(missing_ok=True)
+    except OSError:
+        logger.exception('Could not remove generated thumbnail %s', output)
+
+def update_video_processing_status(video_id, generation):
+    """Update the processing status of a video to failed due to thumbnail processing failure."""
+    Video.objects.filter(pk=video_id, processing_key=generation).update(
+            processing_status='failed', processing_error='Thumbnail processing failed; see logs.')
 
 def process_video(video_id, generation=None):
     """Process a pending video generation and publish it only on success."""
@@ -119,15 +134,23 @@ def process_video(video_id, generation=None):
         return
     relative_dir = f'hls/{video_id}/{key}'
     output = Path(settings.MEDIA_ROOT) / relative_dir
+    handle_video_processing(video_id, video, key, relative_dir, output)
+
+def handle_video_processing(video_id, video, key, relative_dir, output):
+    """Process the video and publish it, handling failures appropriately."""
     try:
         thumbnail = convert_video(video, output)
         if not publish_video(video_id, key, relative_dir, thumbnail):
             shutil.rmtree(output, ignore_errors=True)
     except Exception:
         logger.exception('Video processing failed for video %s', video_id)
-        Video.objects.filter(pk=video_id, processing_key=key).update(
+        mark_video_processing_failed(video_id, key, output)
+
+def mark_video_processing_failed(video_id, key, output):
+    """Mark the video processing as failed and remove the output directory."""
+    Video.objects.filter(pk=video_id, processing_key=key).update(
             processing_status='failed', processing_error='Video processing failed; see logs.')
-        shutil.rmtree(output, ignore_errors=True)
+    shutil.rmtree(output, ignore_errors=True)
 
 def remove_old_directory(directory):
     """Remove the specified directory if it exists and is a directory."""
