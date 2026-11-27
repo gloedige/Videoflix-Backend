@@ -39,14 +39,12 @@ Videoflix Backend provides account registration and authentication, a video cata
 
 ## Getting started
 
-The following steps set up and run the backend locally on your machine, with PostgreSQL and Redis provided by Docker Compose.
+The recommended way to run Videoflix Backend is with Docker Compose. This starts the backend, PostgreSQL, and Redis together; Python dependencies and FFmpeg are installed in the backend image, so they do not need to be installed on the host. Running Django directly on the host is documented as an alternative below.
 
 ### Prerequisites
 
 - Git.
-- Python 3.12 and `pip`.
-- FFmpeg installed and available on your `PATH` for local video processing. The Docker backend image installs FFmpeg for the container workflow.
-- Docker Engine with Docker Compose, used here to run PostgreSQL and Redis.
+- Docker Engine with the Docker Compose plugin, with the Docker service running.
 
 ### 1. Clone the repository
 
@@ -57,7 +55,46 @@ git clone git@github.com:gloedige/Videoflix-Backend.git
 cd Videoflix-Backend
 ```
 
-### 2. Create a virtual environment and install Python dependencies
+### 2. Configure environment variables
+
+Create `.env` from the supplied template:
+
+**Windows PowerShell:**
+
+```powershell
+Copy-Item .env.template .env
+```
+
+**macOS/Linux:**
+
+```sh
+cp .env.template .env
+```
+
+Edit `.env` before starting the stack. Set unique values for `SECRET_KEY`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DJANGO_SUPERUSER_PASSWORD`. Also set the desired `DJANGO_SUPERUSER_USERNAME` and `DJANGO_SUPERUSER_EMAIL`. The template contains example/default credentials; do not use them beyond a disposable local environment and never commit `.env`. The Docker service hostnames (`DB_HOST=db`, `REDIS_HOST=redis`, and `REDIS_LOCATION=redis://redis:6379/1`) are already suitable for this setup.
+
+### 3. Build and start the Docker stack
+
+From the repository root, run:
+
+```sh
+docker compose up --build -d
+docker compose logs -f web
+```
+
+The first command builds the backend image and starts all services in the background. The entrypoint waits for PostgreSQL, collects static files, runs migrations, creates the configured superuser if absent, starts the `default` RQ worker, then starts Gunicorn. The API is available at `http://localhost:8000/`; Django Admin is at `http://localhost:8000/admin/`. Sign in to Admin with the superuser credentials configured in `.env`. `docker compose logs -f web` follows backend output; press Ctrl+C to stop following logs without stopping the containers.
+
+If startup fails with `exec ./backend.entrypoint.sh: no such file or directory`, the entrypoint may have Windows-style CRLF line endings. In VS Code, open `backend.entrypoint.sh`, click `CRLF` in the status bar, select `LF`, and save the file. Then rebuild and start the stack again. This change is only necessary if you encounter this error and the file uses CRLF line endings.
+
+The source tree is bind-mounted into the backend container. Rebuild after changing dependencies or image-installed components. Stop the containers with `docker compose down`; named volumes are preserved. `docker compose down -v` also deletes database, Redis, and media volume data.
+
+### Alternative: run Django on the host
+
+Use this route if you want to run the Django development server and RQ worker directly on your machine while PostgreSQL and Redis remain in Docker. In addition to Git and Docker, you need Python 3.12, `pip`, and FFmpeg installed and available on your `PATH`.
+
+Create `.env` as described above, then change the connection settings to `DB_HOST=localhost`, `REDIS_HOST=localhost`, and `REDIS_LOCATION=redis://localhost:6379/1`. Keep the database name, user, and password consistent with the Compose PostgreSQL service. The email settings in the template are placeholders; the current email backend prints messages to the console instead of sending SMTP mail.
+
+Create a virtual environment and install the dependencies:
 
 **Windows PowerShell:**
 
@@ -75,46 +112,18 @@ python3.12 -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-### 3. Install FFmpeg
-
-Install FFmpeg using the instructions for your operating system from [ffmpeg.org](https://ffmpeg.org/download.html), and confirm the `ffmpeg` executable is available in the terminal `PATH`. If using the all-container option below, the backend image already installs FFmpeg.
-
-### 4. Configure environment variables
-
-Copy `.env.template` to `.env`, then replace placeholders with local database credentials and a private Django secret. Never commit `.env` or real credentials.
-
-**Windows PowerShell:**
-
-```powershell
-Copy-Item .env.template .env
-```
-
-**macOS/Linux:**
-
-```sh
-cp .env.template .env
-```
-
-For running Django on the host while PostgreSQL and Redis run in Compose, set `DB_HOST=localhost`, `REDIS_HOST=localhost`, and `REDIS_LOCATION=redis://localhost:6379/1` in `.env`. Keep the DB name, user, and password consistent with the Compose PostgreSQL service. The template's email settings are placeholders; the current email backend prints messages to the console rather than sending SMTP mail.
-
-### 5. Start PostgreSQL and Redis
-
-From the repository root:
+Install FFmpeg using the instructions for your operating system from [ffmpeg.org](https://ffmpeg.org/download.html). Then start PostgreSQL and Redis from the repository root:
 
 ```sh
 docker compose up -d db redis
 ```
 
-### 6. Migrate the database and create an admin user
-
-In the activated virtual environment:
+With the virtual environment activated, apply migrations and create an admin user:
 
 ```sh
 python manage.py migrate
 python manage.py createsuperuser
 ```
-
-### 7. Start the backend and its background worker
 
 Run Django in one terminal:
 
@@ -129,19 +138,6 @@ python manage.py rqworker default
 ```
 
 The API is available at `http://127.0.0.1:8000/`, and Django Admin at `http://127.0.0.1:8000/admin/`.
-
-### Alternative: run the complete stack in Docker
-
-If you prefer not to install Python dependencies or FFmpeg on the host, configure `.env` with the Compose service hostnames (`DB_HOST=db`, `REDIS_HOST=redis`, `REDIS_LOCATION=redis://redis:6379/1`) and run:
-
-```sh
-docker compose up --build -d
-docker compose logs -f web
-```
-
-If startup fails with `exec ./backend.entrypoint.sh: no such file or directory`, the entrypoint may have Windows-style CRLF line endings. In VS Code, open `backend.entrypoint.sh`, click `CRLF` in the status bar, select `LF`, and save the file. Then run `docker compose up --build -d` again. This change is only necessary if you encounter this error and the file uses CRLF line endings.
-
-The entrypoint waits for PostgreSQL, collects static files, runs migrations, creates the configured superuser if absent, starts the `default` RQ worker, then starts Gunicorn. The backend is at `http://localhost:8000/`; Admin is at `http://localhost:8000/admin/`. The source tree is bind-mounted into the backend container. Rebuild after changing dependencies or image-installed components. `docker compose down` stops containers but preserves named volumes; `docker compose down -v` also deletes their data.
 
 ## Tech stack
 
