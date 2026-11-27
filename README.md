@@ -62,7 +62,7 @@ cd Videoflix-Backend
 **Windows PowerShell:**
 
 ```powershell
-py -3.12 -m venv .venv
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
@@ -138,6 +138,8 @@ If you prefer not to install Python dependencies or FFmpeg on the host, configur
 docker compose up --build -d
 docker compose logs -f web
 ```
+
+If startup fails with `exec ./backend.entrypoint.sh: no such file or directory`, the entrypoint may have Windows-style CRLF line endings. In VS Code, open `backend.entrypoint.sh`, click `CRLF` in the status bar, select `LF`, and save the file. Then run `docker compose up --build -d` again. This change is only necessary if you encounter this error and the file uses CRLF line endings.
 
 The entrypoint waits for PostgreSQL, collects static files, runs migrations, creates the configured superuser if absent, starts the `default` RQ worker, then starts Gunicorn. The backend is at `http://localhost:8000/`; Admin is at `http://localhost:8000/admin/`. The source tree is bind-mounted into the backend container. Rebuild after changing dependencies or image-installed components. `docker compose down` stops containers but preserves named volumes; `docker compose down -v` also deletes their data.
 
