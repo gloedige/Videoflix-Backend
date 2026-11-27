@@ -92,7 +92,7 @@ The source tree is bind-mounted into the backend container. Rebuild after changi
 
 Use this route if you want to run the Django development server and RQ worker directly on your machine while PostgreSQL and Redis remain in Docker. In addition to Git and Docker, you need Python 3.12, `pip`, and FFmpeg installed and available on your `PATH`.
 
-Create `.env` as described above, then change the connection settings to `DB_HOST=localhost`, `REDIS_HOST=localhost`, and `REDIS_LOCATION=redis://localhost:6379/1`. Keep the database name, user, and password consistent with the Compose PostgreSQL service. The email settings in the template are placeholders; the current email backend prints messages to the console instead of sending SMTP mail.
+Create `.env` as described above, then change the connection settings to `DB_HOST=localhost`, `REDIS_HOST=localhost`, and `REDIS_LOCATION=redis://localhost:6379/1`. Keep the database name, user, and password consistent with the Compose PostgreSQL service. Configure the SMTP variables in `.env` as described under [Email delivery](#email-delivery).
 
 Create a virtual environment and install the dependencies:
 
@@ -183,7 +183,25 @@ Videoflix-Backend/
 
 Settings are read from environment variables, with `.env` loaded by `core/settings.py`. `.env.template` is a placeholder template, not a production-ready configuration. Never use its sample or insecure-looking values as real credentials.
 
-> **Email delivery status:** The current `EMAIL_BACKEND` is `django.core.mail.backends.console.EmailBackend`. Activation and password-reset messages are printed to the backend process output; they are **not sent through SMTP**. The `EMAIL_HOST` and related SMTP variables are defined, but will not send email until `EMAIL_BACKEND` is deliberately changed to an SMTP backend.
+### Email delivery
+
+The project is configured to send activation and password-reset messages through Django's SMTP email backend. Set the SMTP connection details and credentials in `.env`; there is no need to set `EMAIL_BACKEND` there. Use the exact server, port, and encryption settings supplied by your email provider. A common STARTTLS configuration looks like this:
+
+```dotenv
+EMAIL_HOST=smtp.your-provider.example
+EMAIL_PORT=587
+EMAIL_HOST_USER=your-full-email-address@example.com
+EMAIL_HOST_PASSWORD=your-provider-password-or-app-password
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+DEFAULT_FROM_EMAIL=your-full-email-address@example.com
+```
+
+For providers that require implicit SSL/TLS, use the provider's SSL host and port (commonly port `465`) and set `EMAIL_USE_SSL=True` and `EMAIL_USE_TLS=False` instead. Do not enable both options simultaneously. Some providers require an app-specific password or require the sender address to match the authenticated account; follow the provider's SMTP instructions. Keep the password private and do not commit `.env`.
+
+After changing `.env`, restart the backend so Django loads the new values. With Docker Compose, use `docker compose restart web`. Trigger registration or password reset to test delivery, then check the recipient's inbox and spam folder. SMTP connection or authentication errors are raised by the sending request and appear in the backend logs (`docker compose logs -f web`). A successful SMTP submission does not guarantee inbox delivery; provider policies and recipient filtering still apply.
+
+If SMTP fails with a TLS/certificate verification error, check whether antivirus or endpoint-security software is scanning outgoing email or intercepting SMTP/TLS traffic. For example, Norton 360's outgoing email scanning may interfere with certificate validation in some setups. As a troubleshooting step, temporarily turn off outgoing email scanning and retry; prefer a narrow exception or trusted certificate configuration where available, and restore the protection setting when finished.
 
 | Variable | Purpose / observed behavior |
 |---|---|
@@ -198,7 +216,7 @@ Settings are read from environment variables, with `.env` loaded by `core/settin
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB` | Django RQ connection; Compose service hostname is `redis`, default port `6379`, default RQ database `0`. |
 | `REDIS_LOCATION` | Redis cache URL; defaults to `redis://redis:6379/1`. |
 | `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL`, `DJANGO_SUPERUSER_PASSWORD` | Used by the Docker entrypoint to create an initial superuser if that username does not exist. Set a private password. |
-| `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `EMAIL_USE_SSL`, `DEFAULT_FROM_EMAIL` | SMTP-related settings are present. However, the current `EMAIL_BACKEND` is Django's console backend, so the configured SMTP values are not currently used to send mail. |
+| `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `EMAIL_USE_SSL`, `DEFAULT_FROM_EMAIL` | SMTP server, credentials, encryption mode, and sender address used by Django's SMTP backend. See [Email delivery](#email-delivery) for setup guidance. |
 | `AUTH_COOKIE_SECURE` | Overrides whether auth cookies use the `Secure` attribute; defaults to `False` when `DEBUG=True` and `True` otherwise. |
 
 docker-compose.yml
@@ -304,7 +322,7 @@ The tests use Django's test runner and include API, auth, cleanup, and FFmpeg in
 - Uploaded and generated media is served through an authenticated Django endpoint, not the public development `static()` media route. Direct media responses are marked `private, no-store`; make sure any proxy or CDN does not bypass this access control or cache private responses publicly.
 - The Docker entrypoint runs `makemigrations` at startup as well as `migrate`. This is the current project behavior; production migration management should be reviewed before deployment.
 - The Django-RQ dashboard is mounted at `/django-rq/`; access control for this dashboard should be reviewed before exposing it beyond a trusted development environment.
-- The configured email backend is `console`, so activation and reset messages are written to application output rather than delivered by the SMTP settings until the backend is changed.
+- Activation and password-reset emails are sent using the SMTP settings in `.env`. Protect SMTP credentials and use provider-specific app passwords where required.
 
 ## License
 
