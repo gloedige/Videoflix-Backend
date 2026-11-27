@@ -3,10 +3,7 @@ from django.db import models
 
 
 class CustomUser(AbstractUser):
-    '''
-    Custom user model extending Django's AbstractUser.
-    Adds fields for email verification and OTP.
-    '''
+    """Custom user model extending Django's AbstractUser. Adds fields for email verification and OTP."""
     email = models.EmailField(unique=True)
     is_verified = models.BooleanField(default=False)
     otp = models.CharField(max_length=6, blank=True, null=True)

@@ -70,11 +70,11 @@ def delete_session_cookies(response):
     return response
 
 def fetch_user(serializer):
-        '''Fetch the user based on the UID and OTP token from the serializer.'''
-        return CustomUser.objects.get(
-                pk=serializer.validated_data.get('uidb64'), 
-                otp=serializer.validated_data.get('token')
-                )
+    '''Fetch the user based on the UID and OTP token from the serializer.'''
+    return CustomUser.objects.get(
+            pk=serializer.validated_data.get('uidb64'), 
+            otp=serializer.validated_data.get('token')
+            )
 
 class VerifyOTPView(APIView):
     """API view for verifying OTP during registration."""
