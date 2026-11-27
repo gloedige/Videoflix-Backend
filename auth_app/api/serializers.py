@@ -18,6 +18,8 @@ User = get_user_model()
 
 
 class CustomUserSerializer(serializers.ModelSerializer):
+    """Serializer for the CustomUser model."""
+    
     class Meta:
         model = CustomUser
         fields = (
@@ -30,9 +32,6 @@ class CustomUserSerializer(serializers.ModelSerializer):
             "is_verified",
             "otp",
         )
-
-
-
 
 class RegistrationSerializer(serializers.ModelSerializer):
     """Serializer for user registration, including password confirmation."""

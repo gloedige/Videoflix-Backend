@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import CustomUser, AccessTokenStorage
+
+from .models import AccessTokenStorage, CustomUser
 
 # Register your models here.
 
