@@ -16,7 +16,11 @@ from rest_framework_simplejwt.views import (
 
 from auth_app.api.authentication import CookieJWTAuthentication
 from auth_app.api.throttling import VerifyOTPThrottle
-from auth_app.email import send_activation_email, send_password_reset_email
+from auth_app.email import (
+    EmailDeliveryError,
+    send_activation_email,
+    send_password_reset_email,
+)
 from auth_app.models import CustomUser
 from auth_app.utils import check_otp_not_expired, generate_otp, get_otp_expiration_time
 from core.settings import (
@@ -168,6 +172,12 @@ class RegistrationView(APIView):
             return Response(
                 {"detail": "A user with this username or email already exists."},
                 status=status.HTTP_400_BAD_REQUEST,
+            )
+        except EmailDeliveryError:
+            logger.exception("Could not send registration email")
+            return Response(
+                {"detail": "Email delivery failed. Check your firewall or email settings."},
+                status=status.HTTP_502_BAD_GATEWAY,
             )
         return self.respond_with_user_and_token(user)
 
@@ -368,13 +378,15 @@ class PasswordResetView(APIView):
                     send_password_reset_email(email, user.id, user.otp)
             except IntegrityError:
                 logger.exception("Error during password reset")
+            except EmailDeliveryError:
+                logger.exception("Could not send password reset email")
 
         return self.send_password_reset_confirmation()
 
     def send_password_reset_confirmation(self):
-        '''Send a response confirming that the password reset email has been sent.'''
+        '''Return the same response whether or not the account exists.'''
         return Response(
-            {"detail": "An email has been sent to reset your password."},
+            {"detail": "If an account exists for this email, a password reset email may be sent."},
             status=status.HTTP_200_OK
         )
 

@@ -1,4 +1,6 @@
 import logging
+import smtplib
+import ssl
 from email import encoders
 from email.mime.base import MIMEBase
 from pathlib import Path
@@ -13,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 LOGO_CID = 'videoflix-logo'
 LOGO_PATH = Path(__file__).resolve().parent / 'static' / 'auth_app' /'videoflix-logo.png'
+
+class EmailDeliveryError(Exception):
+    '''An email could not be submitted to the SMTP server.'''
+
 
 def send_activation_email(target_email, user_id, otp):
     '''Send an OTP email to the target email address for email verification.'''
@@ -44,10 +50,10 @@ def send_password_reset_email(target_email, user_id, otp):
     to = target_email
     message_content = generate_password_reset_message(reset_link, username)
     html_content = _get_html_content(reset_link, username, 'reset')
-
     _send_email(subject, message_content, html_content, to)
     if settings.DEBUG:
         logger.info(f"PASSWORD RESET LINK {reset_link} for {target_email}")
+    
 
 def generate_password_reset_message(reset_link, username):
     '''Generate the plain text message for password reset.'''
@@ -85,7 +91,10 @@ def _send_email(subject, message_content, html_content, to):
     logo = get_logo_attachment()
     message.attach(logo)
 
-    message.send(fail_silently=False)
+    try:
+        message.send(fail_silently=False)
+    except (smtplib.SMTPException, ssl.SSLError, OSError) as exc:
+        raise EmailDeliveryError('Failed to send email through SMTP.') from exc
 
 def get_logo_attachment():
     '''Get the logo attachment for the email.'''
