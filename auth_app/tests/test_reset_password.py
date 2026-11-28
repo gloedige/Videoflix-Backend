@@ -1,6 +1,8 @@
+import ssl
 from datetime import timedelta
+from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -8,6 +10,7 @@ from auth_app.models import CustomUser as User
 from auth_app.utils import encode_user_id
 
 
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
 class ResetPasswordTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -43,6 +46,25 @@ class ResetPasswordTests(TestCase):
         response = self.client.post('/api/password_reset/', {'email': 'nonexistent@example.com'}, format='json')
         self.assertEqual(response.status_code, 200)
         self.assertIn('detail', response.data)
+
+    def test_reset_delivery_failure_rolls_back_token_and_keeps_generic_response(self):
+        """Do not disclose account existence or invalidate an existing reset token."""
+        expires_at = timezone.now() + timedelta(hours=1)
+        user = self.create_user('reset@example.com', is_verified=True, otp='123456',
+                                otp_expires_at=expires_at)
+        with (
+            self.assertLogs('auth_app.api.views', level='ERROR'),
+            patch('auth_app.email.EmailMultiAlternatives.send',
+                  side_effect=ssl.SSLCertVerificationError('untrusted certificate')),
+        ):
+            response = self.client.post('/api/password_reset/', {'email': user.email}, format='json')
+
+        missing = self.client.post('/api/password_reset/', {'email': 'missing@example.com'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, missing.data)
+        user.refresh_from_db()
+        self.assertEqual(user.otp, '123456')
+        self.assertEqual(user.otp_expires_at, expires_at)
 
     def test_reset_password_email_in_capitals(self): 
         """Sending a password reset request with an email in capital letters should succeed."""

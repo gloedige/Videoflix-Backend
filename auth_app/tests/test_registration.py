@@ -1,3 +1,5 @@
+import smtplib
+import ssl
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -75,6 +77,24 @@ class RegistrationTest(TestCase):
             {'detail': 'A user with this username or email already exists.'},
         )
         self.assertFalse(User.objects.filter(email='racing@example.com').exists())
+
+    def test_registration_rolls_back_when_email_delivery_fails(self):
+        """Return 503 and do not leave an account when SMTP delivery fails."""
+        for error in (ssl.SSLCertVerificationError('untrusted certificate'),
+                      smtplib.SMTPException('SMTP unavailable'),
+                      OSError('network unavailable')):
+            with (
+                self.subTest(error=type(error).__name__),
+                self.assertLogs('auth_app.api.views', level='ERROR'),
+                patch('auth_app.email.EmailMultiAlternatives.send', side_effect=error),
+            ):
+                response = self.register(email='delivery@example.com')
+
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.data, {
+                'detail': 'Email delivery is temporarily unavailable. Please try again later.'
+            })
+            self.assertFalse(User.objects.filter(email='delivery@example.com').exists())
 
     def test_registration_rejects_mismatched_password(self):
         """Reject mismatched passwords with an error on confirmed_password."""

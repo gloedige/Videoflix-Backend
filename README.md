@@ -39,7 +39,7 @@ Videoflix Backend provides account registration and authentication, a video cata
 
 ## Getting started
 
-The recommended way to run Videoflix Backend is with Docker Compose. This starts the backend, PostgreSQL, and Redis together; Python dependencies and FFmpeg are installed in the backend image, so they do not need to be installed on the host. Running Django directly on the host is documented as an alternative below.
+Run Videoflix Backend with Docker Compose. This starts Django, the RQ worker, PostgreSQL, and Redis in containers; Python dependencies and FFmpeg are installed in the backend image, so they do not need to be installed on the host.
 
 ### Prerequisites
 
@@ -86,58 +86,7 @@ The first command builds the backend image and starts all services in the backgr
 
 If startup fails with `exec ./backend.entrypoint.sh: no such file or directory`, the entrypoint may have Windows-style CRLF line endings. In VS Code, open `backend.entrypoint.sh`, click `CRLF` in the status bar, select `LF`, and save the file. Then rebuild and start the stack again. This change is only necessary if you encounter this error and the file uses CRLF line endings.
 
-The source tree is bind-mounted into the backend container. Rebuild after changing dependencies or image-installed components. Stop the containers with `docker compose down`; named volumes are preserved. `docker compose down -v` also deletes database, Redis, and media volume data.
-
-### Alternative: run Django on the host
-
-Use this route if you want to run the Django development server and RQ worker directly on your machine while PostgreSQL and Redis remain in Docker. In addition to Git and Docker, you need Python 3.12, `pip`, and FFmpeg installed and available on your `PATH`.
-
-Create `.env` as described above, then change the connection settings to `DB_HOST=localhost`, `REDIS_HOST=localhost`, and `REDIS_LOCATION=redis://localhost:6379/1`. Keep the database name, user, and password consistent with the Compose PostgreSQL service. Configure the SMTP variables in `.env` as described under [Email delivery](#email-delivery).
-
-Create a virtual environment and install the dependencies:
-
-**Windows PowerShell:**
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-```
-
-**macOS/Linux:**
-
-```sh
-python3.12 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements.txt
-```
-
-Install FFmpeg using the instructions for your operating system from [ffmpeg.org](https://ffmpeg.org/download.html). Then start PostgreSQL and Redis from the repository root:
-
-```sh
-docker compose up -d db redis
-```
-
-With the virtual environment activated, apply migrations and create an admin user:
-
-```sh
-python manage.py migrate
-python manage.py createsuperuser
-```
-
-Run Django in one terminal:
-
-```sh
-python manage.py runserver
-```
-
-Run the RQ worker in a second terminal with the same virtual environment activated:
-
-```sh
-python manage.py rqworker default
-```
-
-The API is available at `http://127.0.0.1:8000/`, and Django Admin at `http://127.0.0.1:8000/admin/`.
+The source tree is bind-mounted into the backend container. PostgreSQL and Redis are available to Django and the worker over the Compose network; their ports are not published to the host. Rebuild after changing dependencies or image-installed components. Stop the containers with `docker compose down`; named volumes are preserved. `docker compose down -v` also deletes database, Redis, and media volume data.
 
 ## Tech stack
 
@@ -199,7 +148,7 @@ DEFAULT_FROM_EMAIL=your-full-email-address@example.com
 
 For providers that require implicit SSL/TLS, use the provider's SSL host and port (commonly port `465`) and set `EMAIL_USE_SSL=True` and `EMAIL_USE_TLS=False` instead. Do not enable both options simultaneously. Some providers require an app-specific password or require the sender address to match the authenticated account; follow the provider's SMTP instructions. Keep the password private and do not commit `.env`.
 
-After changing `.env`, restart the backend so Django loads the new values. With Docker Compose, use `docker compose restart web`. Trigger registration or password reset to test delivery, then check the recipient's inbox and spam folder. SMTP connection or authentication errors are raised by the sending request and appear in the backend logs (`docker compose logs -f web`). A successful SMTP submission does not guarantee inbox delivery; provider policies and recipient filtering still apply.
+After changing `.env`, recreate the backend container so Docker Compose loads the new environment values. Trigger registration or password reset to test delivery, then check the recipient's inbox and spam folder. SMTP connection, authentication, and TLS errors appear in the backend logs (`docker compose logs -f web`). On email delivery failure, registration returns HTTP 502 with `{"detail": "Email delivery failed. Check your firewall or email settings."}` and rolls back the new account. Password reset returns the same generic response regardless of account existence or delivery failure, and rolls back the new reset token if sending fails. A successful SMTP submission does not guarantee inbox delivery; provider policies and recipient filtering still apply.
 
 If SMTP fails with a TLS/certificate verification error, check whether antivirus or endpoint-security software is scanning outgoing email or intercepting SMTP/TLS traffic. For example, Norton 360's outgoing email scanning may interfere with certificate validation in some setups. As a troubleshooting step, temporarily turn off outgoing email scanning and retry; prefer a narrow exception or trusted certificate configuration where available, and restore the protection setting when finished.
 
